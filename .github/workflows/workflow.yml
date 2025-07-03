@@ -1,0 +1,65 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run Ruff (linting)
+        run: uv run ruff check .
+
+      - name: Run Ruff (formatting check)
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/stickler
+    permissions:
+      id-token: write # Required for trusted publishing
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true

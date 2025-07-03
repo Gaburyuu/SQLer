@@ -1,7 +1,7 @@
 [project]
-name = "stickler"
+name = "sqler"
 version = "0.1.0"
-description = "Pydantic model persistence and micro-ORM"
+description = "Micro-ORM with Pydantic model persistence"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
