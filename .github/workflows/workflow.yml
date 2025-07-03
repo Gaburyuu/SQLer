@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - "v*.*.*" # Triggers on version tags like v1.0.0, v2.1.3, etc.
+      - "v*.*.*.*.*"
 
 jobs:
   test:
@@ -45,7 +45,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/stickler
     permissions:
-      id-token: write # Required for trusted publishing
+      id-token: write
 
     steps:
       - name: Checkout code
