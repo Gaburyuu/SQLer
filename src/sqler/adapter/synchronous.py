@@ -103,7 +103,7 @@ class SQLiteAdapter(AdapterABC):
         return cls(uri, pragmas=pragmas)
 
     @classmethod
-    def from_file(cls, path: str = "sqler.db") -> "SQLiteAdapter":
+    def on_disk(cls, path: str = "sqler.db") -> "SQLiteAdapter":
         """Connects (creates if not exist) a db on disk with some pragmas applied"""
         pragmas = [
             "PRAGMA foreign_keys = ON",
