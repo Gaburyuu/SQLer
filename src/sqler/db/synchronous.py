@@ -86,7 +86,7 @@ class SQLiteDB(DBABC):
     ### factories
 
     @classmethod
-    def in_memory(cls) -> "SQLiteDB":
+    def in_memory(cls, shared: bool = True) -> "SQLiteDB":
         """Connects to an in memory db with some pragmas applied"""
         pragmas = [
             "PRAGMA foreign_keys = ON",
@@ -96,7 +96,11 @@ class SQLiteDB(DBABC):
             "PRAGMA cache_size = -32000",
             "PRAGMA locking_mode = EXCLUSIVE",
         ]
-        return cls("file::memory:?cache=shared", pragmas=pragmas)
+        if shared:
+            uri = "file::memory:?cache=shared"
+        else:
+            uri = ":memory:"
+        return cls(uri, pragmas=pragmas)
 
     @classmethod
     def from_file(cls, path: str = "sqler.db") -> "SQLiteDB":
