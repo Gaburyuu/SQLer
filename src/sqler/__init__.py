@@ -1,3 +1,3 @@
-from .db import SQLiteDB
+from .db import SQLiteDB, NotConnectedError
 
-__all__ = ["SQLiteDB"]
+__all__ = ["SQLiteDB", "NotConnectedError"]
