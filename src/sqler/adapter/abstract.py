@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
 
-class DBAdapterError(Exception):
+class AdapterError(Exception):
     """Base exception for database adapter errors."""
 
     pass
@@ -15,8 +15,8 @@ class NotConnectedError(ConnectionError):
     pass
 
 
-class DBABC(ABC):
-    """Abstract base for a synchronous DB connector."""
+class AdapterABC(ABC):
+    """Abstract base for a synchronous DB adapter."""
 
     @abstractmethod
     def connect(self) -> None:

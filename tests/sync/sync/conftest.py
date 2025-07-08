@@ -1,10 +1,10 @@
 import pytest
-from sqler import SQLiteDB
+from sqler import SQLiteAdapter
 
 
 @pytest.fixture(scope="function")
-def oligo_table():
-    db = SQLiteDB.in_memory(shared=False)
+def oligo_adapter():
+    db = SQLiteAdapter.in_memory(shared=False)
     db.connect()
 
     db.execute("""

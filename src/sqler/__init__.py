@@ -1,3 +1,3 @@
-from .db import SQLiteDB, NotConnectedError
+from .adapter import SQLiteAdapter, NotConnectedError
 
-__all__ = ["SQLiteDB", "NotConnectedError"]
+__all__ = ["SQLiteAdapter", "NotConnectedError"]
