@@ -14,3 +14,20 @@ class SQLerExpression:
         return self.__class__(
             f"({self.sql}) AND ({other.sql})", self.params + other.params
         )
+
+    def __or__(self, other: Self) -> Self:
+        """combine two exprs with or; params concatenated"""
+        return self.__class__(
+            f"({self.sql}) OR ({other.sql})", self.params + other.params
+        )
+
+    def __invert__(self) -> Self:
+        """negate expr with not"""
+        return self.__class__(f"NOT ({self.sql})", self.params)
+
+    def __str__(self) -> str:
+        """return sql fragment string"""
+        return self.sql
+
+    def __repr__(self) -> str:
+        return f"{self.__class__}({self.sql!r}, {self.params!r})"
