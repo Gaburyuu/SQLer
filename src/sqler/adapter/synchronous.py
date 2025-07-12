@@ -1,5 +1,5 @@
 import sqlite3
-from typing import Optional, Any
+from typing import Optional, Any, Self
 from .abstract import AdapterABC, NotConnectedError
 
 
@@ -86,7 +86,7 @@ class SQLiteAdapter(AdapterABC):
     ### factories
 
     @classmethod
-    def in_memory(cls, shared: bool = True) -> "SQLiteAdapter":
+    def in_memory(cls, shared: bool = True) -> Self:
         """Connects to an in memory db with some pragmas applied"""
         pragmas = [
             "PRAGMA foreign_keys = ON",
@@ -103,7 +103,7 @@ class SQLiteAdapter(AdapterABC):
         return cls(uri, pragmas=pragmas)
 
     @classmethod
-    def on_disk(cls, path: str = "sqler.db") -> "SQLiteAdapter":
+    def on_disk(cls, path: str = "sqler.db") -> Self:
         """Connects (creates if not exist) a db on disk with some pragmas applied"""
         pragmas = [
             "PRAGMA foreign_keys = ON",
