@@ -25,6 +25,12 @@ class SQLerExpression:
         """negate expr with not"""
         return self.__class__(f"NOT ({self.sql})", self.params)
 
+    def __eq__(self, other: object) -> bool:
+        """equality for testing"""
+        if not isinstance(other, self.__class__):
+            return False
+        return self.sql == other.sql and self.params == other.params
+
     def __str__(self) -> str:
         """return sql fragment string"""
         return self.sql

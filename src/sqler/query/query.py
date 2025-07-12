@@ -1,5 +1,5 @@
 from typing import Any, Optional, Self
-from .expression import SQLerExpression
+from sqler.query import SQLerExpression
 from sqler.adapter.abstract import AdapterABC
 
 
@@ -105,7 +105,7 @@ class SQLerQuery:
             NoAdapterError("No adapter set for query")
         sql, params = self._build_query()
         cur = self._adapter.execute(sql, params)
-        return [cur for cur in cur.fetchall()]
+        return [row[0] for row in cur.fetchall()]
 
     def first(self) -> Optional[dict[str, Any]]:
         """runs the query limited to 1; returns first doc or none"""
