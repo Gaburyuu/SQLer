@@ -19,6 +19,6 @@ def test_and():
     combined = a & b
 
     # should have a .sql that we can inspect
-    assert combined.sql == f"({LEN_SQL} AND ({TM_SQL}))"
+    assert combined.sql == f"({LEN_SQL}) AND ({TM_SQL})"
     # same with .params
     assert combined.params == [20, 50]
