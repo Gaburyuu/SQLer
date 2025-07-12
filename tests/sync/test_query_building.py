@@ -1,5 +1,6 @@
 import pytest
 from sqler.query import SQLerQuery, SQLerExpression
+import json
 
 
 @pytest.fixture
@@ -99,7 +100,7 @@ def test_first_returns_first_result(dummy_adapter):
         {"sequence": "TTGGCCA", "length": 7, "_id": 2},
     ]
 
-    result = q.first()
+    result = json.loads(q.first())
     assert result == {"sequence": "ACGTAC", "length": 6, "_id": 1}
     # should generate limit 1 in sql
     assert "LIMIT 1" in q.limit(1).sql

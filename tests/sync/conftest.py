@@ -1,12 +1,13 @@
 import pytest
 from sqler import SQLiteAdapter, SQLerDB
 from sqler.adapter.abstract import AdapterABC
+import json
 
 
 class DummyAdapter(AdapterABC):
     def __init__(self):
         self.executed = []
-        self.return_value = []
+        self.return_value = []  # set the raw dicts or lists or values
         self.count = 0
 
     def connect(self) -> None:
@@ -20,7 +21,9 @@ class DummyAdapter(AdapterABC):
 
         class Cursor:
             def fetchall(cur_self):
-                return self.return_value
+                # will return the value json'd like a sqlite return
+                to_return = [(json.dumps(i),) for i in self.return_value]
+                return to_return
 
             def fetchone(cur_self):
                 return (self.count,)
