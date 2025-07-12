@@ -58,13 +58,17 @@ def test_str():
     assert "'G%G'" in repr(a)
 
 
-def test_chaining():
+def test_chaining_expressions():
     """tests chaining more than one"""
     # let's try and combine these
     a = SQLerExpression(LEN_SQL, [20])
     b = SQLerExpression(TM_SQL, [50])
     c = SQLerExpression(LIKE_SQL, ["TTT%"])
+    d = SQLerExpression(IS_SQL)
 
-    expression = (a | b) & c
-    assert expression.sql == f"(({LEN_SQL}) OR ({TM_SQL})) AND ({LIKE_SQL})"
+    expression = ((a | b) & c) & ~d
+    assert (
+        expression.sql
+        == f"((({LEN_SQL}) OR ({TM_SQL})) AND ({LIKE_SQL})) AND (NOT ({IS_SQL}))"
+    )
     assert expression.params == [20, 50, "TTT%"]
