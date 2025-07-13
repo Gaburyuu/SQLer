@@ -79,7 +79,6 @@ def test_exclude_by_mass(oligo_db, setup_oligos):
 
 
 def test_order_by_tm_desc(oligo_db, setup_oligos):
-    tm = SQLerField("tm")
     q = SQLerQuery("oligos", oligo_db.adapter)
     rows = [json.loads(j) for j in q.order_by("tm", desc=True).all()]
     tms = [o["tm"] for o in rows]
@@ -87,7 +86,6 @@ def test_order_by_tm_desc(oligo_db, setup_oligos):
 
 
 def test_limit_two_shortest(oligo_db, setup_oligos):
-    length = SQLerField("length")
     q = SQLerQuery("oligos", oligo_db.adapter)
     rows = [json.loads(j) for j in q.order_by("length").limit(2).all()]
     # All your short oligos have length 4

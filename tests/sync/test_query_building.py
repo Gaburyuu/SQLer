@@ -84,7 +84,7 @@ def test_all_runs_adapter(query_obj):
     expr = SQLerExpression("length > ?", [5])
     q = q.filter(expr)
     adapter.return_value = [{"sequence": "ACGTACGT", "length": 8}]
-    result = q.all()
+    _ = q.all()
     # result is what DummyAdapter returned
     assert adapter.executed[-1][0].startswith("SELECT data")
 
