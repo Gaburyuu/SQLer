@@ -207,9 +207,3 @@ def test_contains_on_array(oligo_db, setup_oligos):
     expr = tags.contains("test")
     rows = [json.loads(j) for j in q.filter(expr).all()]
     assert any("test" in o["tags"] for o in rows)
-
-
-def test_isin_empty_list_raises():
-    field = SQLerField("sequence")
-    with pytest.raises(ValueError):
-        field.isin([])

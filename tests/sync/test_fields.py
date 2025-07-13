@@ -1,4 +1,3 @@
-import pytest
 from sqler.query import SQLerField, SQLerExpression
 
 
@@ -31,17 +30,24 @@ def test_json_path_and_nesting():
     assert (tag == "A").sql == "JSON_EXTRACT(data, '$.specs.tag') = ?"
 
 
-def test_contains_isin_like():
-    """check contains, isin, like helpers work and build right sql"""
+def test_contains_isin_sql_array():
+    """check contains, isin, like helpers build json_each sql for arrays"""
     tag = SQLerField("tags")
-    expr = tag.contains("exon")
-    assert expr.sql == "JSON_EXTRACT(data, '$.tags') LIKE ?"
-    assert expr.params == ["%exon%"]
+
+    expression = tag.contains("exon")
+    assert (
+        expression.sql
+        == "EXISTS (SELECT 1 FROM json_each(data, '$.tags') WHERE json_each.value = ?)"
+    )
+    assert expression.params == ["exon"]
 
     expr2 = tag.isin(["exon", "intron", "utr"])
-    assert expr2.sql == "JSON_EXTRACT(data, '$.tags') IN (?, ?, ?)"
+    assert expr2.sql == (
+        "EXISTS (SELECT 1 FROM json_each(data, '$.tags') WHERE json_each.value IN (?, ?, ?))"
+    )
     assert expr2.params == ["exon", "intron", "utr"]
 
+    # Like stays the same since it’s not for arrays
     expr3 = tag.like("exon%")
     assert expr3.sql == "JSON_EXTRACT(data, '$.tags') LIKE ?"
     assert expr3.params == ["exon%"]
@@ -56,11 +62,12 @@ def test_fields_make_the_same_way():
     assert seq.path != region.path
 
 
-def test_isin_empty_raises():
-    """field.isin([]) should raise ValueError"""
+def test_isin_empty():
+    """should return SQLerExpression("0", [])"""
     oligo_type = SQLerField("type")
-    with pytest.raises(ValueError):
-        oligo_type.isin([])
+    should_be_empty = oligo_type.isin([])
+    assert should_be_empty.sql == "0"
+    assert should_be_empty.params == []
 
 
 def test_real_field_works_with_oligo_db(oligo_db):
@@ -68,24 +75,78 @@ def test_real_field_works_with_oligo_db(oligo_db):
     # insert some oligos
     oligo_db.insert_document("oligos", {"length": 18, "sequence": "ACGTACGTACGTACGTAC"})
     oligo_db.insert_document(
-        "oligos", {"length": 20, "sequence": "CGTAAAGGGTTTCCCAAAGG", "tag": "exon"}
+        "oligos", {"length": 20, "sequence": "CGTAAAGGGTTTCCCAAAGG", "tag": "dye"}
     )
     oligo_db.insert_document("oligos", {"length": 15, "sequence": "GGGTTTAAACCCGGG"})
 
     length = SQLerField("length")
     tag = SQLerField("tag")
     # query for oligos with length > 16
-    expr = length > 16
+    expression = length > 16
     results = oligo_db.execute_sql(
-        f"SELECT _id, data FROM oligos WHERE {expr.sql}", expr.params
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
     )
     docs = [d for d in results]
     assert all(doc["length"] > 16 for doc in docs)
 
-    # query for oligos with tag = 'exon'
-    expr = tag == "exon"
+    # query for oligos with tag = 'dye'
+    expression = tag == "dye"
     results = oligo_db.execute_sql(
-        f"SELECT _id, data FROM oligos WHERE {expr.sql}", expr.params
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
     )
     docs = [d for d in results]
-    assert all(doc.get("tag") == "exon" for doc in docs)
+    assert all(doc.get("tag") == "dye" for doc in docs)
+
+
+def test_contains_isin_real_integration(oligo_db):
+    """integration: make sure contains and isin work in real queries with array fields"""
+    # Insert oligos with different tags
+    oligo_db.insert_document(
+        "oligos",
+        {"sequence": "ACGTACGTACGTACGTAC", "tags": ["test", "forward"]},
+    )
+    oligo_db.insert_document(
+        "oligos",
+        {"sequence": "CGTAAAGGGTTTCCCAAAGG", "tags": ["test", "reverse"]},
+    )
+    oligo_db.insert_document(
+        "oligos",
+        {"sequence": "GGGTTTAAACCCGGG", "tags": []},
+    )
+
+    tag = SQLerField("tags")
+
+    # Should find the first oligo (has "forward" tag)
+    expression = tag.contains("forward")
+    results = oligo_db.execute_sql(
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
+    )
+    docs = [d for d in results]
+    assert len(docs) == 1
+    assert docs[0]["sequence"] == "ACGTACGTACGTACGTAC"
+
+    # Should find the second oligo (has "reverse" tag)
+    expression = tag.contains("reverse")
+    results = oligo_db.execute_sql(
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
+    )
+    docs = [d for d in results]
+    assert len(docs) == 1
+    assert docs[0]["sequence"] == "CGTAAAGGGTTTCCCAAAGG"
+
+    # Should not find any with tag "hairpin"
+    expression = tag.contains("hairpin")
+    results = oligo_db.execute_sql(
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
+    )
+    docs = [d for d in results]
+    assert docs == []
+
+    # Test isin: find any oligo with tag "forward" or "reverse"
+    expression = tag.isin(["forward", "reverse"])
+    results = oligo_db.execute_sql(
+        f"SELECT _id, data FROM oligos WHERE {expression.sql}", expression.params
+    )
+    docs = [d for d in results]
+    seqs = {d["sequence"] for d in docs}
+    assert seqs == {"ACGTACGTACGTACGTAC", "CGTAAAGGGTTTCCCAAAGG"}

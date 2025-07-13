@@ -81,20 +81,20 @@ class SQLerField:
         return SQLerField(self.path + [other])
 
     def contains(self, value: Any) -> SQLerExpression:
-        """field.contains(x) → field LIKE %x%"""
-        return SQLerExpression(
-            f"JSON_EXTRACT(data, '{self._json_path()}') LIKE ?", [f"%{value}%"]
-        )
+        """checks if array contains a value"""
+        json_path = self._json_path()  # e.g., '$.tags'
+        expression = f"EXISTS (SELECT 1 FROM json_each(data, '{json_path}') WHERE json_each.value = ?)"
+        return SQLerExpression(expression, [value])
 
-    def isin(self, values: List[Any]) -> SQLerExpression:
-        """field.isin([a, b, c]) → field IN (?, ?, ...)"""
+    def isin(self, values: list) -> SQLerExpression:
+        """checks if it's in a list of values"""
         if not values:
-            raise ValueError("values must contain at least one item")
+            # empty IN always false
+            return SQLerExpression("0", [])
+        json_path = self._json_path()
         placeholders = ", ".join("?" for _ in values)
-        return SQLerExpression(
-            f"JSON_EXTRACT(data, '{self._json_path()}') IN ({placeholders})",
-            list(values),
-        )
+        expression = f"EXISTS (SELECT 1 FROM json_each(data, '{json_path}') WHERE json_each.value IN ({placeholders}))"
+        return SQLerExpression(expression, values)
 
     def like(self, pattern: str) -> SQLerExpression:
         """field.like('abc%') → field LIKE ?"""
