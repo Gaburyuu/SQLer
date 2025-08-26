@@ -40,6 +40,39 @@ print(user)
 db.close()
 ```
 
+### Model Layer (Pydantic v2)
+
+Use `SQLerModel` to define models that persist as JSON documents, with convenience CRUD and query helpers returning model instances.
+
+```python
+from sqler import SQLerDB, SQLerModel
+from sqler.query import SQLerField as F
+
+class User(SQLerModel):
+    name: str
+    age: int
+
+db = SQLerDB.in_memory()
+User.set_db(db)  # binds the model to a table named "users"
+
+# Create and save
+u = User(name="Alice", age=30)
+u.save()
+print(u._id)
+
+# Query as models
+adults = User.query().filter(F("age") >= 18).order_by("age").all()
+print([a.name for a in adults])
+
+# Refresh and delete
+u.age = 31
+u.save()
+u.refresh()
+u.delete()
+
+db.close()
+```
+
 ### Querying
 
 ```python
@@ -153,3 +186,11 @@ print(q.all_dicts())  # returns the matching orders as dicts
 - Use `query.all_dicts()` and `query.first_dict()` to get parsed Python dicts with `_id` included.
 
 This split lets you choose zero-copy raw reads (strings) or convenient parsed objects.
+
+### Testing
+
+Run the test suite with uv:
+
+```
+uv run -q pytest -q
+```
