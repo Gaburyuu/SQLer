@@ -66,9 +66,7 @@ def test_model_query_chaining():
 
         # sql inspection
         s = qs.sql()
-        assert s.startswith("SELECT data FROM users") or s.startswith(
-            "SELECT _id, data FROM users"
-        )
+        assert s.startswith("SELECT data FROM users") or s.startswith("SELECT _id, data FROM users")
     finally:
         db.close()
 

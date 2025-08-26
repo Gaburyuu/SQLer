@@ -318,10 +318,7 @@ def test_alternative_syntax_ne(oligo_db):
     oligo_db.insert_document("oligos", doc1)
     oligo_db.insert_document("oligos", doc2)
     f = SQLerField("meta") / "info" / "score"
-    rows = [
-        json.loads(j)
-        for j in SQLerQuery("oligos", oligo_db.adapter).filter(f != 0).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(f != 0).all()]
     assert rows[0]["meta"]["info"]["score"] == 5
 
 
@@ -342,9 +339,7 @@ def test_isin_array_primitives(oligo_db):
     oligo_db.insert_document("oligos", {"tags": [1, 2, 3]})
     oligo_db.insert_document("oligos", {"tags": [4, 5]})
     expr = SQLerField("tags").isin([3, 5])
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     names = [r["tags"] for r in rows]
     assert [[1, 2, 3], [4, 5]][0] in names  # both match one of the list
 
@@ -355,9 +350,7 @@ def test_like_string(oligo_db):
     oligo_db.insert_document("oligos", {"name": "ABC123"})
     oligo_db.insert_document("oligos", {"name": "XYZ"})
     expr = SQLerField("name").like("ABC%")
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows[0]["name"] == "ABC123"
 
 
@@ -366,9 +359,7 @@ def test_index_array_primitives(oligo_db):
     """access array index 0"""
     oligo_db.insert_document("oligos", {"tags": ["first", "second"]})
     expr = SQLerField("tags")[0] == "first"
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows[0]["tags"][0] == "first"
 
 
@@ -377,9 +368,7 @@ def test_any_one_level(oligo_db):
     """any() on array of dicts"""
     oligo_db.insert_document("oligos", {"peaks": [{"mz": 800}, {"mz": 950}]})
     expr = SQLerField(["peaks"]).any()["mz"] > 900
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows[0]["peaks"][1]["mz"] == 950
 
 
@@ -389,9 +378,7 @@ def test_any_two_levels(oligo_db):
     doc = {"reads": [{"masses": [{"mz": 910}, {"mz": 880}]}]}
     oligo_db.insert_document("oligos", doc)
     expr = SQLerField(["reads"]).any()["masses"].any()["mz"] > 900
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows and rows[0]["reads"][0]["masses"][0]["mz"] == 910
 
 
@@ -401,9 +388,7 @@ def test_deeply_nested_dict(oligo_db):
     d = {"a": {"b": {"c": {"d": 42}}}}
     oligo_db.insert_document("oligos", d)
     expr = SQLerField(["a", "b", "c", "d"]) == 42
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows[0]["a"]["b"]["c"]["d"] == 42
 
 
@@ -413,9 +398,7 @@ def test_combined_filters(oligo_db):
     oligo_db.insert_document("oligos", {"count": 5})
     oligo_db.insert_document("oligos", {"count": 15})
     expr = (SQLerField("count") >= 10) & (SQLerField("count") < 20)
-    rows = [
-        json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()
-    ]
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
     assert rows[0]["count"] == 15
 
 

@@ -169,10 +169,7 @@ class SQLerField:
           # -> EXISTS (SELECT 1 FROM json_each(data, '$.tags') WHERE json_each.value = ?)
         """
         json_path = self._json_path()
-        expr = (
-            f"EXISTS (SELECT 1 FROM json_each(data, '{json_path}') "
-            f"WHERE json_each.value = ?)"
-        )
+        expr = f"EXISTS (SELECT 1 FROM json_each(data, '{json_path}') WHERE json_each.value = ?)"
         return SQLerExpression(expr, [value])
 
     def isin(self, values: List[Any]) -> SQLerExpression:
@@ -257,9 +254,7 @@ class SQLerAnyExpression(SQLerExpression):
         # handle more .any()s: join each nested array
         for alias, array_key in alias_stack[1:]:
             # e.g. JOIN json_each(json_extract(a.value, '$.arr2')) AS b
-            joins.append(
-                f"json_each(json_extract({prev_alias}.value, '$.{array_key}')) AS {alias}"
-            )
+            joins.append(f"json_each(json_extract({prev_alias}.value, '$.{array_key}')) AS {alias}")
             prev_alias = alias
 
         from_join = " JOIN ".join(joins)

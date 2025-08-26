@@ -30,4 +30,3 @@ def test_first_dict_limits_and_returns_none(dummy_adapter):
     assert doc == {"_id": 10, "name": "Zoe"}
     # Should have used LIMIT 1
     assert any("LIMIT 1" in stmt[0] for stmt in dummy_adapter.executed)
-

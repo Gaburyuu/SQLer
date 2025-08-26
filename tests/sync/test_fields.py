@@ -7,16 +7,12 @@ def test_comparison_operators():
     seq = SQLerField("sequence")
     # added an == method for sqler expresion so we can verify this idk
     assert (length == 18) == SQLerExpression("JSON_EXTRACT(data, '$.length') = ?", [18])
-    assert (length != 10) == SQLerExpression(
-        "JSON_EXTRACT(data, '$.length') != ?", [10]
-    )
+    assert (length != 10) == SQLerExpression("JSON_EXTRACT(data, '$.length') != ?", [10])
     assert (length > 5) == SQLerExpression("JSON_EXTRACT(data, '$.length') > ?", [5])
     assert (length >= 2) == SQLerExpression("JSON_EXTRACT(data, '$.length') >= ?", [2])
     assert (length < 3) == SQLerExpression("JSON_EXTRACT(data, '$.length') < ?", [3])
     assert (length <= 4) == SQLerExpression("JSON_EXTRACT(data, '$.length') <= ?", [4])
-    assert (seq == "ACGT") == SQLerExpression(
-        "JSON_EXTRACT(data, '$.sequence') = ?", ["ACGT"]
-    )
+    assert (seq == "ACGT") == SQLerExpression("JSON_EXTRACT(data, '$.sequence') = ?", ["ACGT"])
 
 
 def test_json_path_and_nesting():

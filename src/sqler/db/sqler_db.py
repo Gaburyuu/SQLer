@@ -41,23 +41,17 @@ class SQLerDB:
         """insert a document; returns the new _id"""
         self._ensure_table(table)
         payload = json.dumps(doc)
-        cursor = self.adapter.execute(
-            f"INSERT INTO {table} (data) VALUES (json(?));", [payload]
-        )
+        cursor = self.adapter.execute(f"INSERT INTO {table} (data) VALUES (json(?));", [payload])
         self.adapter.commit()
         return cursor.lastrowid
 
-    def upsert_document(
-        self, table: str, _id: Optional[int], doc: dict[str, Any]
-    ) -> int:
+    def upsert_document(self, table: str, _id: Optional[int], doc: dict[str, Any]) -> int:
         """insert if new, update if _id exists; returns the _id"""
         self._ensure_table(table)
         payload = json.dumps(doc)
         if _id is None:
             return self.insert_document(table, doc)
-        self.adapter.execute(
-            f"UPDATE {table} SET data = json(?) WHERE _id = ?;", [payload, _id]
-        )
+        self.adapter.execute(f"UPDATE {table} SET data = json(?) WHERE _id = ?;", [payload, _id])
         self.adapter.commit()
         return _id
 
@@ -93,9 +87,7 @@ class SQLerDB:
         if new_docs:
             expected_new = max_id_after - max_id_before
             assert expected_new == len(new_docs), "Mismatch in _id assignment count"
-            for doc, new_id in zip(
-                new_docs, range(max_id_before + 1, max_id_after + 1)
-            ):
+            for doc, new_id in zip(new_docs, range(max_id_before + 1, max_id_after + 1)):
                 doc["_id"] = new_id
 
         return [doc.get("_id") for doc in docs]
@@ -103,9 +95,7 @@ class SQLerDB:
     def find_document(self, table: str, _id: int) -> Optional[dict[str, Any]]:
         """fetch one document by _id, or None"""
         self._ensure_table(table)
-        cur = self.adapter.execute(
-            f"SELECT _id, data FROM {table} WHERE _id = ?;", [_id]
-        )
+        cur = self.adapter.execute(f"SELECT _id, data FROM {table} WHERE _id = ?;", [_id])
         row = cur.fetchone()
         if not row:
             return None
@@ -119,9 +109,7 @@ class SQLerDB:
         self.adapter.execute(f"DELETE FROM {table} WHERE _id = ?;", [_id])
         self.adapter.commit()
 
-    def execute_sql(
-        self, query: str, params: Optional[list[Any]] = None
-    ) -> list[dict[str, Any]]:
+    def execute_sql(self, query: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         """
         run custom SQL and return a list of JSON documents (dicts)
         the sql statement must be a select that returns a list of docs
@@ -164,9 +152,7 @@ class SQLerDB:
         self._ensure_table(table)
         idx_name = name or f"idx_{table}_{field.replace('.', '_')}"
         unique_sql = "UNIQUE" if unique else ""
-        expr = (
-            f"json_extract(data, '$.{field}')" if not field.startswith("_") else field
-        )
+        expr = f"json_extract(data, '$.{field}')" if not field.startswith("_") else field
         where_sql = f"WHERE {where}" if where else ""
         ddl = f"CREATE {unique_sql} INDEX IF NOT EXISTS {idx_name} ON {table} ({expr}) {where_sql};"
         self.adapter.execute(ddl)

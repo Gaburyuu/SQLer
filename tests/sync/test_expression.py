@@ -67,8 +67,5 @@ def test_chaining_expressions():
     d = SQLerExpression(IS_SQL)
 
     expression = ((a | b) & c) & ~d
-    assert (
-        expression.sql
-        == f"((({LEN_SQL}) OR ({TM_SQL})) AND ({LIKE_SQL})) AND (NOT ({IS_SQL}))"
-    )
+    assert expression.sql == f"((({LEN_SQL}) OR ({TM_SQL})) AND ({LIKE_SQL})) AND (NOT ({IS_SQL}))"
     assert expression.params == [20, 50, "TTT%"]

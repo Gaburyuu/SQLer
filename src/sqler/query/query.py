@@ -36,9 +36,7 @@ class SQLerQuery:
 
     def filter(self, expression: SQLerExpression) -> Self:
         """returns a new query with expression anded in"""
-        new_expression = (
-            expression if self._expression is None else (self._expression & expression)
-        )
+        new_expression = expression if self._expression is None else (self._expression & expression)
         return self.__class__(
             self._table,
             self._adapter,
@@ -51,9 +49,7 @@ class SQLerQuery:
     def exclude(self, expression: SQLerExpression) -> Self:
         """returns a new query with not-expression anded in"""
         not_expr = ~expression
-        new_expression = (
-            not_expr if self._expression is None else (self._expression & not_expr)
-        )
+        new_expression = not_expr if self._expression is None else (self._expression & not_expr)
         return self.__class__(
             self._table,
             self._adapter,

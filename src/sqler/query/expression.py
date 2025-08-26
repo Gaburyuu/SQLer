@@ -11,15 +11,11 @@ class SQLerExpression:
 
     def __and__(self, other: Self) -> Self:
         """combine two exprs with and; params concatenated"""
-        return self.__class__(
-            f"({self.sql}) AND ({other.sql})", self.params + other.params
-        )
+        return self.__class__(f"({self.sql}) AND ({other.sql})", self.params + other.params)
 
     def __or__(self, other: Self) -> Self:
         """combine two exprs with or; params concatenated"""
-        return self.__class__(
-            f"({self.sql}) OR ({other.sql})", self.params + other.params
-        )
+        return self.__class__(f"({self.sql}) OR ({other.sql})", self.params + other.params)
 
     def __invert__(self) -> Self:
         """negate expr with not"""

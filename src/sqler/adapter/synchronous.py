@@ -44,9 +44,7 @@ class SQLiteAdapter(AdapterABC):
             cursor.execute(query)
         return cursor
 
-    def executemany(
-        self, query: str, param_list: Optional[list[Any]]
-    ) -> sqlite3.Cursor:
+    def executemany(self, query: str, param_list: Optional[list[Any]]) -> sqlite3.Cursor:
         """Execute a param query multiple times with different parameter sets"""
         if not self.connection:
             raise NotConnectedError("Database not connected, call connect() first")
