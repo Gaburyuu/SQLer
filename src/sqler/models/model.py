@@ -16,7 +16,13 @@ def _default_table_name(name: str) -> str:
 
 
 class SQLerModel(BaseModel):
-    """Pydantic-based model with persistence helpers for SQLerDB."""
+    """Pydantic-based model with persistence helpers for SQLerDB.
+
+    Define subclasses to model your domain. Bind the class to a database via
+    :meth:`set_db`, optionally overriding the table name. Instances persist as
+    JSON (excluding the private ``_id`` attribute) into a table with schema
+    ``(_id INTEGER PRIMARY KEY AUTOINCREMENT, data JSON NOT NULL)``.
+    """
 
     # internal id stored outside the JSON blob
     _id: Optional[int] = PrivateAttr(default=None)
@@ -34,18 +40,38 @@ class SQLerModel(BaseModel):
     # ----- class methods -----
     @classmethod
     def set_db(cls: Type[TModel], db: SQLerDB, table: Optional[str] = None) -> None:
+        """Bind this model class to a database and table.
+
+        Args:
+            db: Database instance to use for persistence.
+            table: Optional table name. Defaults to lowercase plural of the
+                class name (e.g., ``User`` → ``users``).
+        """
         cls._db = db
         cls._table = table or _default_table_name(cls.__name__)
         cls._db._ensure_table(cls._table)
 
     @classmethod
     def _require_binding(cls) -> tuple[SQLerDB, str]:
+        """Return the bound DB and table or raise if unbound.
+
+        Raises:
+            RuntimeError: If :meth:`set_db` has not been called.
+        """
         if cls._db is None or cls._table is None:
             raise RuntimeError("Model is not bound. Call set_db(db, table?) first.")
         return cls._db, cls._table
 
     @classmethod
     def from_id(cls: Type[TModel], id_: int) -> Optional[TModel]:
+        """Hydrate an instance by ``_id``.
+
+        Args:
+            id_: Row id to load.
+
+        Returns:
+            Model instance when found, else ``None``.
+        """
         db, table = cls._require_binding()
         doc = db.find_document(table, id_)
         if doc is None:
@@ -57,12 +83,14 @@ class SQLerModel(BaseModel):
 
     @classmethod
     def query(cls: Type[TModel]) -> SQLerQuerySet[TModel]:
+        """Return a queryset for chaining and execution."""
         db, table = cls._require_binding()
         q = db.query(table)
         return SQLerQuerySet[TModel](cls, q)
 
     @classmethod
     def filter(cls: Type[TModel], expression: SQLerExpression) -> SQLerQuerySet[TModel]:
+        """Shorthand for ``cls.query().filter(expression)``."""
         return cls.query().filter(expression)
 
     @classmethod
@@ -74,11 +102,24 @@ class SQLerModel(BaseModel):
         name: Optional[str] = None,
         where: Optional[str] = None,
     ) -> None:
+        """Create an index on a JSON field via the model class.
+
+        Args:
+            field: Dotted JSON path or literal column.
+            unique: Enforce uniqueness.
+            name: Optional index name.
+            where: Optional partial-index WHERE clause.
+        """
         db, table = cls._require_binding()
         db.create_index(table, field, unique=unique, name=name, where=where)
 
     # ----- instance methods -----
     def save(self: TModel) -> TModel:
+        """Insert or update this instance and update ``_id``.
+
+        Returns:
+            self: The same instance (for chaining).
+        """
         cls = self.__class__
         db, table = cls._require_binding()
         payload = self.model_dump(exclude={"_id"})
@@ -87,6 +128,11 @@ class SQLerModel(BaseModel):
         return self
 
     def delete(self) -> None:
+        """Delete this instance by ``_id`` and unset it.
+
+        Raises:
+            ValueError: If the instance has not been saved.
+        """
         cls = self.__class__
         db, table = cls._require_binding()
         if self._id is None:
@@ -95,6 +141,15 @@ class SQLerModel(BaseModel):
         self._id = None
 
     def refresh(self: TModel) -> TModel:
+        """Reload this instance's fields from the database.
+
+        Raises:
+            ValueError: If the instance has not been saved.
+            LookupError: If the row no longer exists.
+
+        Returns:
+            self: The same instance (for chaining).
+        """
         cls = self.__class__
         db, table = cls._require_binding()
         if self._id is None:

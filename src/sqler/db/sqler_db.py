@@ -5,20 +5,38 @@ from typing import Any, Optional
 
 
 class SQLerDB:
-    """
-    simple, flexible document DB for storing JSON blobs by table
-    any table name can be used; you supply the table for each call
+    """Document store for JSON blobs on SQLite.
+
+    SQLerDB persists Python dicts as JSON in a table with schema
+    ``(_id INTEGER PRIMARY KEY AUTOINCREMENT, data JSON NOT NULL)``. The API
+    is table-agnostic: pass the table name on each call. Tables are created
+    on demand as you insert or query.
     """
 
     @classmethod
     def in_memory(cls, shared: bool = True) -> "SQLerDB":
-        """returns a SQLerDB backed by an in-memory SQLite database"""
+        """Create a SQLerDB backed by an in-memory SQLite database.
+
+        Args:
+            shared: When True, use a shared-cache URI so multiple connections
+                see the same in-memory database.
+
+        Returns:
+            SQLerDB: Connected database instance.
+        """
         adapter = SQLiteAdapter.in_memory(shared=shared)
         return cls(adapter)
 
     @classmethod
     def on_disk(cls, path: str = "sqler.db") -> "SQLerDB":
-        """returns a SQLerDB using a persistent file on disk"""
+        """Create a SQLerDB backed by a persistent file on disk.
+
+        Args:
+            path: Path to the SQLite database file (created if missing).
+
+        Returns:
+            SQLerDB: Connected database instance.
+        """
         adapter = SQLiteAdapter.on_disk(path)
         return cls(adapter)
 
@@ -27,7 +45,11 @@ class SQLerDB:
         self.adapter.connect()
 
     def _ensure_table(self, table: str) -> None:
-        """create the target table if it doesn't exist yet"""
+        """Create the target table if it doesn't exist.
+
+        Args:
+            table: Table name to ensure.
+        """
         ddl = f"""
         CREATE TABLE IF NOT EXISTS {table} (
             _id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +60,15 @@ class SQLerDB:
         self.adapter.commit()
 
     def insert_document(self, table: str, doc: dict[str, Any]) -> int:
-        """insert a document; returns the new _id"""
+        """Insert a document.
+
+        Args:
+            table: Table name.
+            doc: JSON-serializable dict to persist.
+
+        Returns:
+            int: Newly assigned ``_id``.
+        """
         self._ensure_table(table)
         payload = json.dumps(doc)
         cursor = self.adapter.execute(f"INSERT INTO {table} (data) VALUES (json(?));", [payload])
@@ -46,7 +76,16 @@ class SQLerDB:
         return cursor.lastrowid
 
     def upsert_document(self, table: str, _id: Optional[int], doc: dict[str, Any]) -> int:
-        """insert if new, update if _id exists; returns the _id"""
+        """Insert or update a document.
+
+        Args:
+            table: Table name.
+            _id: Existing id to update, or ``None`` to insert.
+            doc: Document to write.
+
+        Returns:
+            int: The existing or newly assigned ``_id``.
+        """
         self._ensure_table(table)
         payload = json.dumps(doc)
         if _id is None:
@@ -56,7 +95,19 @@ class SQLerDB:
         return _id
 
     def bulk_upsert(self, table: str, docs: list[dict[str, Any]]) -> list[int]:
-        """upserts a bunch of docs; assigns _id for new ones"""
+        """Upsert multiple documents efficiently.
+
+        New docs (without ``_id``) are inserted and receive ids. Existing docs
+        (with ``_id``) are updated.
+
+        Args:
+            table: Table name.
+            docs: List of documents. If an element contains ``_id``, it is
+                treated as an update; otherwise, an insert.
+
+        Returns:
+            list[int]: The ``_id`` for each input document, preserving order.
+        """
         self._ensure_table(table)
         params = []
         new_docs = []
@@ -93,7 +144,16 @@ class SQLerDB:
         return [doc.get("_id") for doc in docs]
 
     def find_document(self, table: str, _id: int) -> Optional[dict[str, Any]]:
-        """fetch one document by _id, or None"""
+        """Fetch a document by id.
+
+        Args:
+            table: Table name.
+            _id: Row id to fetch.
+
+        Returns:
+            dict | None: Decoded document with ``_id`` merged in, or ``None``
+            if not found.
+        """
         self._ensure_table(table)
         cur = self.adapter.execute(f"SELECT _id, data FROM {table} WHERE _id = ?;", [_id])
         row = cur.fetchone()
@@ -104,17 +164,28 @@ class SQLerDB:
         return obj
 
     def delete_document(self, table: str, _id: int) -> None:
-        """delete a document by its _id"""
+        """Delete a document by id.
+
+        Args:
+            table: Table name.
+            _id: Row id to delete.
+        """
         self._ensure_table(table)
         self.adapter.execute(f"DELETE FROM {table} WHERE _id = ?;", [_id])
         self.adapter.commit()
 
     def execute_sql(self, query: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
-        """
-        run custom SQL and return a list of JSON documents (dicts)
-        the sql statement must be a select that returns a list of docs
-            for raw sql perhaps try accessing this obj's adapter
-        expects result rows as (_id, data JSON)
+        """Run a custom SELECT and return decoded documents.
+
+        The SQL must select rows as ``(_id, data)`` where ``data`` is JSON.
+        Each row is decoded into a dict and enriched with ``_id``.
+
+        Args:
+            query: SQL SELECT statement.
+            params: Optional parameter list.
+
+        Returns:
+            list[dict[str, Any]]: Decoded documents with ``_id`` included.
         """
         cursor = self.adapter.execute(query, params or [])
         rows = cursor.fetchall()
@@ -126,16 +197,23 @@ class SQLerDB:
         return docs
 
     def query(self, table: str) -> SQLerQuery:
-        """convenience: return a SQLerQuery bound to this DB's adapter"""
+        """Return a SQLerQuery bound to this DB's adapter.
+
+        Args:
+            table: Table name.
+
+        Returns:
+            SQLerQuery: Query object you can chain and execute.
+        """
         self._ensure_table(table)
         return SQLerQuery(table=table, adapter=self.adapter)
 
     def close(self):
-        """close the adapter connection"""
+        """Close the underlying adapter connection."""
         self.adapter.close()
 
     def connect(self):
-        """connect if not already connected"""
+        """Connect the underlying adapter if not already connected."""
         self.adapter.connect()
 
     def create_index(
@@ -146,8 +224,18 @@ class SQLerDB:
         name: Optional[str] = None,
         where: Optional[str] = None,
     ):
-        """
-        create an index on a field (JSON path supported).
+        """Create an index on a JSON field or literal column.
+
+        For JSON paths, pass dotted paths like ``"meta.level"``. These are
+        compiled into ``json_extract(data, '$.meta.level')``. Literal columns
+        (e.g., ``_id``) should be prefixed with ``_`` and are used as-is.
+
+        Args:
+            table: Table name.
+            field: Dotted JSON path or literal column.
+            unique: Enforce uniqueness of the index.
+            name: Optional index name; autogenerated if omitted.
+            where: Optional partial-index WHERE clause.
         """
         self._ensure_table(table)
         idx_name = name or f"idx_{table}_{field.replace('.', '_')}"
@@ -159,7 +247,11 @@ class SQLerDB:
         self.adapter.commit()
 
     def drop_index(self, name: str):
-        """Drop an index by name."""
+        """Drop an index by name.
+
+        Args:
+            name: Index name.
+        """
         ddl = f"DROP INDEX IF EXISTS {name};"
         self.adapter.execute(ddl)
         self.adapter.commit()

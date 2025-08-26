@@ -16,7 +16,12 @@ class NoAdapterError(ConnectionError):
 
 
 class SQLerQuery:
-    """builds and runs chainable queries"""
+    """Build and execute chainable queries against a table.
+
+    Queries are immutable; chaining methods returns new query instances. By
+    default, ``all()`` and ``first()`` return raw JSON strings from SQLite. Use
+    ``all_dicts()`` and ``first_dict()`` to get parsed dicts with ``_id``.
+    """
 
     def __init__(
         self,
@@ -35,7 +40,14 @@ class SQLerQuery:
         self._limit = limit
 
     def filter(self, expression: SQLerExpression) -> Self:
-        """returns a new query with expression anded in"""
+        """Return a new query with the expression AND-ed in.
+
+        Args:
+            expression: Boolean expression to filter on.
+
+        Returns:
+            SQLerQuery: New query instance.
+        """
         new_expression = expression if self._expression is None else (self._expression & expression)
         return self.__class__(
             self._table,
@@ -47,7 +59,14 @@ class SQLerQuery:
         )
 
     def exclude(self, expression: SQLerExpression) -> Self:
-        """returns a new query with not-expression anded in"""
+        """Return a new query with the NOT of expression AND-ed in.
+
+        Args:
+            expression: Boolean expression to negate and apply.
+
+        Returns:
+            SQLerQuery: New query instance.
+        """
         not_expr = ~expression
         new_expression = not_expr if self._expression is None else (self._expression & not_expr)
         return self.__class__(
@@ -60,21 +79,41 @@ class SQLerQuery:
         )
 
     def order_by(self, field: str, desc: bool = False) -> Self:
-        """returns a new query ordered by field"""
+        """Return a new query ordered by the given JSON field.
+
+        Args:
+            field: Dotted JSON path to sort by (e.g., ``"age"``).
+            desc: Sort descending when True.
+
+        Returns:
+            SQLerQuery: New query instance.
+        """
         return self.__class__(
             self._table, self._adapter, self._expression, field, desc, self._limit
         )
 
     def limit(self, n: int) -> Self:
-        """returns a new query limited to n results"""
+        """Return a new query with a LIMIT clause.
+
+        Args:
+            n: Maximum number of rows to return.
+
+        Returns:
+            SQLerQuery: New query instance.
+        """
         return self.__class__(
             self._table, self._adapter, self._expression, self._order, self._desc, n
         )
 
     def _build_query(self, *, include_id: bool = False) -> tuple[str, list[Any]]:
-        """builds the select statement and param list
+        """Build the SELECT statement and parameters.
 
-        include_id: when True, selects `_id, data` instead of only `data`.
+        Args:
+            include_id: When True, select ``_id, data`` instead of only
+                ``data``.
+
+        Returns:
+            tuple[str, list[Any]]: SQL string and parameter list.
         """
         where = f"WHERE {self._expression.sql}" if self._expression else ""
         order = ""
@@ -91,16 +130,23 @@ class SQLerQuery:
 
     @property
     def sql(self) -> str:
-        """returns the current select sql"""
+        """Return the current SELECT SQL string."""
         return self._build_query()[0]
 
     @property
     def params(self) -> list[Any]:
-        """returns the current param list"""
+        """Return the current parameter list."""
         return self._build_query()[1]
 
     def all(self) -> list[dict[str, Any]]:
-        """runs the query; returns all matching oligo docs as dicts"""
+        """Execute and return all matching rows as raw JSON strings.
+
+        Raises:
+            NoAdapterError: If the query has no adapter.
+
+        Returns:
+            list[str]: JSON strings for each matching row (data column).
+        """
         if self._adapter is None:
             raise NoAdapterError("No adapter set for query")
         sql, params = self._build_query()
@@ -108,13 +154,24 @@ class SQLerQuery:
         return [row[0] for row in cur.fetchall()]
 
     def first(self) -> Optional[dict[str, Any]]:
-        """runs the query limited to 1; returns first doc or none"""
+        """Execute with ``LIMIT 1`` and return the first raw JSON string.
+
+        Raises:
+            NoAdapterError: If the query has no adapter.
+
+        Returns:
+            str | None: JSON string for the first row, or ``None`` when empty.
+        """
         if self._adapter is None:
             raise NoAdapterError("No adapter set for query")
         return self.limit(1).all()[0] if self.limit(1).all() else None
 
     def count(self) -> int:
-        """returns count of matching oligos"""
+        """Return the count of matching rows.
+
+        Raises:
+            NoAdapterError: If the query has no adapter.
+        """
         if self._adapter is None:
             raise NoAdapterError("No adapter set for query")
         sql, params = self._build_query()
@@ -124,7 +181,14 @@ class SQLerQuery:
         return int(row[0]) if row else 0
 
     def all_dicts(self) -> list[dict[str, Any]]:
-        """runs the query; returns list of parsed dicts with `_id` attached"""
+        """Execute and return parsed dicts with ``_id`` attached.
+
+        Raises:
+            NoAdapterError: If the query has no adapter.
+
+        Returns:
+            list[dict[str, Any]]: One dict per row with ``_id`` included.
+        """
         if self._adapter is None:
             raise NoAdapterError("No adapter set for query")
         import json
@@ -140,7 +204,14 @@ class SQLerQuery:
         return docs
 
     def first_dict(self) -> Optional[dict[str, Any]]:
-        """runs the query limited to 1; returns first parsed dict (with `_id`) or None"""
+        """Execute with ``LIMIT 1`` and return first parsed dict with ``_id``.
+
+        Raises:
+            NoAdapterError: If the query has no adapter.
+
+        Returns:
+            dict | None: First matching document with ``_id``, or ``None``.
+        """
         if self._adapter is None:
             raise NoAdapterError("No adapter set for query")
         results = self.limit(1).all_dicts()
