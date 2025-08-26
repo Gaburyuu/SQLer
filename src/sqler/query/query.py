@@ -75,8 +75,11 @@ class SQLerQuery:
             self._table, self._adapter, self._expression, self._order, self._desc, n
         )
 
-    def _build_query(self) -> tuple[str, list[Any]]:
-        """builds the select statement and param list"""
+    def _build_query(self, *, include_id: bool = False) -> tuple[str, list[Any]]:
+        """builds the select statement and param list
+
+        include_id: when True, selects `_id, data` instead of only `data`.
+        """
         where = f"WHERE {self._expression.sql}" if self._expression else ""
         order = ""
         if self._order:
@@ -84,7 +87,8 @@ class SQLerQuery:
                 " DESC" if self._desc else ""
             )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
-        sql = f"SELECT data FROM {self._table} {where} {order} {limit}".strip()
+        select = "_id, data" if include_id else "data"
+        sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()
         sql = " ".join(sql.split())  # collapse double spaces
         params = self._expression.params if self._expression else []
         return sql, params
@@ -102,7 +106,7 @@ class SQLerQuery:
     def all(self) -> list[dict[str, Any]]:
         """runs the query; returns all matching oligo docs as dicts"""
         if self._adapter is None:
-            NoAdapterError("No adapter set for query")
+            raise NoAdapterError("No adapter set for query")
         sql, params = self._build_query()
         cur = self._adapter.execute(sql, params)
         return [row[0] for row in cur.fetchall()]
@@ -110,15 +114,38 @@ class SQLerQuery:
     def first(self) -> Optional[dict[str, Any]]:
         """runs the query limited to 1; returns first doc or none"""
         if self._adapter is None:
-            NoAdapterError("No adapter set for query")
+            raise NoAdapterError("No adapter set for query")
         return self.limit(1).all()[0] if self.limit(1).all() else None
 
     def count(self) -> int:
         """returns count of matching oligos"""
         if self._adapter is None:
-            NoAdapterError("No adapter set for query")
+            raise NoAdapterError("No adapter set for query")
         sql, params = self._build_query()
         count_sql = sql.replace("SELECT data", "SELECT count(*)")
         cur = self._adapter.execute(count_sql, params)
         row = cur.fetchone()
         return int(row[0]) if row else 0
+
+    def all_dicts(self) -> list[dict[str, Any]]:
+        """runs the query; returns list of parsed dicts with `_id` attached"""
+        if self._adapter is None:
+            raise NoAdapterError("No adapter set for query")
+        import json
+
+        sql, params = self._build_query(include_id=True)
+        cur = self._adapter.execute(sql, params)
+        rows = cur.fetchall()
+        docs: list[dict[str, Any]] = []
+        for _id, data_json in rows:
+            obj = json.loads(data_json)
+            obj["_id"] = _id
+            docs.append(obj)
+        return docs
+
+    def first_dict(self) -> Optional[dict[str, Any]]:
+        """runs the query limited to 1; returns first parsed dict (with `_id`) or None"""
+        if self._adapter is None:
+            raise NoAdapterError("No adapter set for query")
+        results = self.limit(1).all_dicts()
+        return results[0] if results else None

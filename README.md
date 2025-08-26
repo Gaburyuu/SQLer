@@ -58,12 +58,16 @@ db.insert_document("users", {"name": "Peter Jones", "age": 35, "city": "New York
 User = SQLerField
 query = db.query("users").filter(User("city") == "New York")
 
-# Get all users in New York
-users = query.all()
+# Get all users in New York (JSON strings)
+users_json = query.all()
+print(users_json)
+
+# Or get parsed dicts with `_id` attached
+users = query.all_dicts()
 print(users)
 
-# Get the first user in New York
-user = query.first()
+# Get the first user in New York as a parsed dict
+user = query.first_dict()
 print(user)
 
 # Get the number of users in New York
@@ -104,3 +108,48 @@ print(products)
 
 db.close()
 ```
+
+### Indexes
+
+```python
+from sqler import SQLerDB
+
+db = SQLerDB.on_disk("my_database.db")
+
+# Create an index on a JSON field for faster queries
+db.create_index("users", "city")  # -> uses json_extract(data, '$.city')
+
+# Unique/conditional index examples
+db.create_index("users", "email", unique=True)
+db.create_index("users", "age", where="json_extract(data, '$.age') IS NOT NULL")
+```
+
+### Arrays of Objects with .any()
+
+When you have arrays of objects, use `.any()` to filter within them efficiently (internally uses `json_each` joins):
+
+```python
+from sqler import SQLerDB
+from sqler.query import SQLerField as F
+
+db = SQLerDB.in_memory()
+
+db.insert_document("orders", {
+    "order_id": 1,
+    "items": [
+        {"sku": "A1", "qty": 2},
+        {"sku": "B2", "qty": 5},
+    ]
+})
+
+# Find orders where any item has qty > 3
+q = db.query("orders").filter(F(["items"]).any()["qty"] > 3)
+print(q.all_dicts())  # returns the matching orders as dicts
+```
+
+### Return Types
+
+- `query.all()` and `query.first()` return raw JSON strings from SQLite.
+- Use `query.all_dicts()` and `query.first_dict()` to get parsed Python dicts with `_id` included.
+
+This split lets you choose zero-copy raw reads (strings) or convenient parsed objects.

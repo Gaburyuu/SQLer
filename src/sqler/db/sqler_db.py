@@ -1,4 +1,5 @@
 from sqler.adapter import SQLiteAdapter
+from sqler.query import SQLerQuery
 import json
 from typing import Any, Optional
 
@@ -135,6 +136,11 @@ class SQLerDB:
             obj["_id"] = row[0]
             docs.append(obj)
         return docs
+
+    def query(self, table: str) -> SQLerQuery:
+        """convenience: return a SQLerQuery bound to this DB's adapter"""
+        self._ensure_table(table)
+        return SQLerQuery(table=table, adapter=self.adapter)
 
     def close(self):
         """close the adapter connection"""

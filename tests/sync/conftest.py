@@ -21,9 +21,21 @@ class DummyAdapter(AdapterABC):
 
         class Cursor:
             def fetchall(cur_self):
-                # will return the value json'd like a sqlite return
-                to_return = [(json.dumps(i),) for i in self.return_value]
-                return to_return
+                # Support both SELECT data (single column) and SELECT _id, data (two columns)
+                lower_q = query.strip().lower()
+                if lower_q.startswith("select _id, data"):
+                    to_return = []
+                    for i in self.return_value:
+                        _id = i.get("_id") if isinstance(i, dict) else None
+                        if isinstance(i, dict) and "_id" in i:
+                            payload = {k: v for k, v in i.items() if k != "_id"}
+                        else:
+                            payload = i
+                        to_return.append((_id, json.dumps(payload)))
+                    return to_return
+                else:
+                    # default single-column JSON string
+                    return [(json.dumps(i),) for i in self.return_value]
 
             def fetchone(cur_self):
                 return (self.count,)
