@@ -73,6 +73,37 @@ u.delete()
 db.close()
 ```
 
+### Model Indexes & Table Naming
+
+Models persist into a default table name derived from the class: lowercase plural of the class name (e.g., `User` → `users`). You can override this in `set_db`.
+
+```python
+from sqler import SQLerDB, SQLerModel
+
+class User(SQLerModel):
+    name: str
+    age: int
+
+db = SQLerDB.on_disk("app.db")
+
+# Default table name: "users"
+User.set_db(db)
+
+# Or override the table name
+# User.set_db(db, table="people")
+
+# Create indexes via the model
+User.add_index("age")                       # json_extract(data, '$.age')
+User.add_index("email", unique=True)        # unique JSON index
+User.add_index(
+    "meta.level",
+    where="json_extract(data, '$.meta.level') IS NOT NULL",
+)
+
+# Note: Fields starting with '_' are treated as literal columns (e.g., "_id").
+# For normal model fields, you can just pass the JSON path like "meta.level".
+```
+
 ### Querying
 
 ```python
