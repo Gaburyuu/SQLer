@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 from sqler import SQLerDB
 from sqler.models import SQLerModel
 from sqler.query import SQLerField as F
@@ -67,7 +66,9 @@ def test_model_query_chaining():
 
         # sql inspection
         s = qs.sql()
-        assert s.startswith("SELECT data FROM users") or s.startswith("SELECT _id, data FROM users")
+        assert s.startswith("SELECT data FROM users") or s.startswith(
+            "SELECT _id, data FROM users"
+        )
     finally:
         db.close()
 
@@ -81,4 +82,3 @@ def test_model_add_index():
         User.add_index("age")
     finally:
         db.close()
-
