@@ -225,3 +225,12 @@ Run the test suite with uv:
 ```
 uv run -q pytest -q
 ```
+
+### Contributing & Style
+
+- Read the style guide: see `STYLE_GUIDE.md`.
+- Format and lint:
+  - `uv run ruff format .`
+  - `uv run ruff check .`
+- Run tests with coverage (optional gate):
+  - `uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90`

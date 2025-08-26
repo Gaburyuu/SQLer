@@ -83,11 +83,11 @@ class SQLerDB:
             ON CONFLICT(_id) DO UPDATE SET data = excluded.data
         """
 
-        with self.adapter as adp:
-            cursor = adp.execute(f"SELECT COALESCE(MAX(_id), 0) FROM {table};")
+        with self.adapter as adapter:
+            cursor = adapter.execute(f"SELECT COALESCE(MAX(_id), 0) FROM {table};")
             max_id_before = cursor.fetchone()[0]
-            adp.executemany(query, params)
-            cursor = adp.execute(f"SELECT MAX(_id) FROM {table};")
+            adapter.executemany(query, params)
+            cursor = adapter.execute(f"SELECT MAX(_id) FROM {table};")
             max_id_after = cursor.fetchone()[0]
 
         if new_docs:
