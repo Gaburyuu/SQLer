@@ -29,3 +29,11 @@ uv run python examples/01_quickstart_sync.py
 ## 06 — Indexes + Explain
 - File: `examples/06_indexes_and_explain.py`
 - Ensuring an index and inspecting the plan with `EXPLAIN QUERY PLAN`.
+
+## 07 — FastAPI App
+- Files: `examples/fastapi/app.py`, `examples/fastapi/models.py`, `examples/fastapi/db.py`
+- Run:
+
+```bash
+uv run uvicorn examples.fastapi.app:app --reload
+```
