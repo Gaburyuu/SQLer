@@ -309,3 +309,62 @@ async def main():
 
 asyncio.run(main())
 ```
+
+### Async Safe Model
+
+`AsyncSQLerSafeModel` mirrors the safe model behavior with `await`able operations.
+
+```python
+import asyncio
+from sqler import AsyncSQLerDB, AsyncSQLerSafeModel, StaleVersionError
+
+class AAccount(AsyncSQLerSafeModel):
+    owner: str
+    balance: int
+
+async def main():
+    db = AsyncSQLerDB.in_memory()
+    await db.connect()
+    AAccount.set_db(db)
+
+    acc = AAccount(owner="Ada", balance=100)
+    await acc.save()           # _version == 0
+
+    acc.balance = 120
+    await acc.save()           # _version == 1
+
+    try:
+        # fake a concurrent bump
+        await db.adapter.execute(
+            "UPDATE aaccounts SET _version = _version + 1 WHERE _id = ?;",
+            [acc._id],
+        )
+        await db.adapter.commit()
+        await acc.save()       # raises StaleVersionError
+    except StaleVersionError:
+        await acc.refresh()
+
+    await db.close()
+
+asyncio.run(main())
+```
+
+### Examples
+
+Run these end-to-end examples locally:
+
+- `examples/sync_model_quickstart.py`: basic model save/query.
+- `examples/sync_safe_model.py`: optimistic locking with `SQLerSafeModel`.
+- `examples/async_model_quickstart.py`: async model save/query.
+- `examples/async_safe_model.py`: async optimistic locking.
+- `examples/model_arrays_any.py`: arrays: `contains`, `isin`, and `.any()`.
+
+Command examples:
+
+```
+uv run python examples/sync_model_quickstart.py
+uv run python examples/sync_safe_model.py
+uv run python examples/async_model_quickstart.py
+uv run python examples/async_safe_model.py
+uv run python examples/model_arrays_any.py
+```
