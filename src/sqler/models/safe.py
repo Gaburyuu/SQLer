@@ -51,7 +51,7 @@ class SQLerSafeModel(SQLerModel):
         """
         cls = self.__class__
         db, table = cls._require_binding()
-        payload = self.model_dump(exclude={"_id"})
+        payload = self._dump_with_relations()
         try:
             new_id, new_version = db.upsert_with_version(table, self._id, payload, self._version)
         except RuntimeError as e:

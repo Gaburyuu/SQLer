@@ -6,6 +6,7 @@ from pydantic import BaseModel, PrivateAttr
 from sqler.db.sqler_db import SQLerDB
 from sqler.models.queryset import SQLerQuerySet
 from sqler.query import SQLerQuery, SQLerExpression
+from sqler import registry
 
 
 TModel = TypeVar("TModel", bound="SQLerModel")
@@ -50,6 +51,7 @@ class SQLerModel(BaseModel):
         cls._db = db
         cls._table = table or _default_table_name(cls.__name__)
         cls._db._ensure_table(cls._table)
+        registry.register(cls._table, cls)
 
     @classmethod
     def _require_binding(cls) -> tuple[SQLerDB, str]:
@@ -76,6 +78,7 @@ class SQLerModel(BaseModel):
         doc = db.find_document(table, id_)
         if doc is None:
             return None
+        doc = cls._resolve_relations(doc)
         inst = cls.model_validate(doc)  # type: ignore[call-arg]
         # attach db id stored outside the json payload
         inst._id = doc.get("_id")
@@ -122,7 +125,7 @@ class SQLerModel(BaseModel):
         """
         cls = self.__class__
         db, table = cls._require_binding()
-        payload = self.model_dump(exclude={"_id"})
+        payload = self._dump_with_relations()
         new_id = db.upsert_document(table, self._id, payload)
         self._id = new_id
         return self
@@ -157,6 +160,7 @@ class SQLerModel(BaseModel):
         doc = db.find_document(table, self._id)
         if doc is None:
             raise LookupError(f"Row {self._id} not found for refresh")
+        doc = cls._resolve_relations(doc)
         fresh = cls.model_validate(doc)  # type: ignore[call-arg]
         # update fields in-place (excluding _id which is also present)
         for fname in self.__class__.model_fields:
@@ -166,3 +170,51 @@ class SQLerModel(BaseModel):
         # set db id explicitly
         self._id = doc.get("_id")
         return self
+
+    # ----- relationship encoding/decoding -----
+    @classmethod
+    def _is_ref_dict(cls, value: object) -> bool:
+        return isinstance(value, dict) and "_table" in value and "_id" in value
+
+    @classmethod
+    def _resolve_relations(cls, data: dict) -> dict:
+        def decode(value: object):
+            if isinstance(value, dict):
+                if cls._is_ref_dict(value):
+                    table = value.get("_table")
+                    rid = value.get("_id")
+                    mdl = registry.resolve(table) if isinstance(table, str) else None
+                    if mdl is not None and hasattr(mdl, "from_id"):
+                        try:
+                            return mdl.from_id(rid)
+                        except Exception:
+                            return value
+                return {k: decode(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [decode(v) for v in value]
+            return value
+
+        return {k: decode(v) for k, v in data.items()}
+
+    def _dump_with_relations(self) -> dict:
+        def encode(value: object):
+            from sqler.models.model import SQLerModel as _M
+
+            if isinstance(value, _M):
+                value.save()
+                table = value.__class__._table
+                return {"_table": table, "_id": value._id}
+            if isinstance(value, list):
+                return [encode(v) for v in value]
+            if isinstance(value, dict):
+                return {k: encode(v) for k, v in value.items()}
+            if isinstance(value, BaseModel):
+                return value.model_dump()
+            return value
+
+        payload: dict = {}
+        for name in self.__class__.model_fields:
+            if name == "_id":
+                continue
+            payload[name] = encode(getattr(self, name))
+        return payload

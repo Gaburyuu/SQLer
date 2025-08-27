@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional, Type, TypeVar, ClassVar
+from typing import Optional, Type, TypeVar, ClassVar, Any
 from pydantic import BaseModel, PrivateAttr
 
 from sqler.db.async_db import AsyncSQLerDB
 from sqler.query.async_query import AsyncSQLerQuery
 from sqler.models.async_queryset import AsyncSQLerQuerySet
 from sqler.query import SQLerExpression
+from sqler import registry
+import inspect
 
 
 TAModel = TypeVar("TAModel", bound="AsyncSQLerModel")
@@ -25,6 +27,7 @@ class AsyncSQLerModel(BaseModel):
     def set_db(cls, db: AsyncSQLerDB, table: Optional[str] = None) -> None:
         cls._db = db
         cls._table = table or cls.__name__.lower() + "s"
+        registry.register(cls._table, cls)
 
     @classmethod
     def _require_binding(cls) -> tuple[AsyncSQLerDB, str]:
@@ -38,6 +41,7 @@ class AsyncSQLerModel(BaseModel):
         doc = await db.find_document(table, id_)
         if doc is None:
             return None
+        doc = await cls._aresolve_relations(doc)
         inst = cls.model_validate(doc)
         inst._id = doc.get("_id")
         return inst  # type: ignore[return-value]
@@ -55,7 +59,7 @@ class AsyncSQLerModel(BaseModel):
     async def save(self: TAModel) -> TAModel:
         cls = self.__class__
         db, table = cls._require_binding()
-        payload = self.model_dump(exclude={"_id"})
+        payload = await self._adump_with_relations()
         new_id = await db.upsert_document(table, self._id, payload)
         self._id = new_id
         return self
@@ -78,6 +82,7 @@ class AsyncSQLerModel(BaseModel):
         doc = await db.find_document(table, self._id)
         if doc is None:
             raise LookupError(f"Row {self._id} not found for refresh")
+        doc = await cls._aresolve_relations(doc)
         fresh = cls.model_validate(doc)
         for fname in self.__class__.model_fields:
             if fname == "_id":
@@ -85,3 +90,68 @@ class AsyncSQLerModel(BaseModel):
             setattr(self, fname, getattr(fresh, fname))
         self._id = doc.get("_id")
         return self
+
+    # ----- relationship helpers (async) -----
+    @classmethod
+    async def _aresolve_relations(cls, data: dict) -> dict:
+        async def adecode(value: Any):
+            if isinstance(value, dict):
+                if isinstance(value.get("_table"), str) and "_id" in value:
+                    table = value["_table"]
+                    rid = value["_id"]
+                    mdl = registry.resolve(table)
+                    if mdl is not None and hasattr(mdl, "from_id"):
+                        fn = getattr(mdl, "from_id")
+                        if inspect.iscoroutinefunction(fn):
+                            try:
+                                return await fn(rid)
+                            except Exception:
+                                return value
+                        else:
+                            try:
+                                return fn(rid)
+                            except Exception:
+                                return value
+                out = {}
+                for k, v in value.items():
+                    out[k] = await adecode(v)
+                return out
+            if isinstance(value, list):
+                return [await adecode(v) for v in value]
+            return value
+
+        out = {}
+        for k, v in data.items():
+            out[k] = await adecode(v)
+        return out
+
+    async def _adump_with_relations(self) -> dict:
+        async def aencode(value: Any):
+            from sqler.models.model import SQLerModel as _SM
+            from sqler.models.async_model import AsyncSQLerModel as _AM
+
+            if isinstance(value, _AM):
+                await value.save()
+                table = value.__class__._table
+                return {"_table": table, "_id": value._id}
+            if isinstance(value, _SM):
+                value.save()
+                table = value.__class__._table
+                return {"_table": table, "_id": value._id}
+            if isinstance(value, list):
+                return [await aencode(v) for v in value]
+            if isinstance(value, dict):
+                out = {}
+                for k, v in value.items():
+                    out[k] = await aencode(v)
+                return out
+            if isinstance(value, BaseModel):
+                return value.model_dump()
+            return value
+
+        payload: dict = {}
+        for name in self.__class__.model_fields:
+            if name == "_id":
+                continue
+            payload[name] = await aencode(getattr(self, name))
+        return payload

@@ -150,6 +150,44 @@ User.add_index(
 - Safe models add a `_version` column; you normally don’t index it unless you query by version.
 - Use conditional (partial) indices with `where=` to keep indices small and effective.
 
+### Relationships (Save/Load/Refresh)
+
+Models can reference other SQLerModels. When saving, related models are saved first and references are written as a small dict `{ "_table": ..., "_id": ... }`. On load/refresh, those references are resolved back into model instances.
+
+```python
+from sqler import SQLerDB, SQLerModel
+
+class Address(SQLerModel):
+    city: str
+    country: str
+
+class User(SQLerModel):
+    name: str
+    address: Address | None = None
+
+db = SQLerDB.in_memory()
+Address.set_db(db)
+User.set_db(db)
+
+home = Address(city="Kyoto", country="JP")
+u = User(name="Alice", address=home)
+u.save()  # ensures address is saved; user stores a reference
+
+loaded = User.from_id(u._id)
+print(loaded.address.city)  # "Kyoto"
+
+# update nested and refresh
+loaded.address.city = "Osaka"
+loaded.address.save()
+loaded.refresh()
+print(loaded.address.city)  # "Osaka"
+```
+
+Notes:
+- References work for nested structures and arrays of models.
+- Pydantic submodels (non‑SQLerModel) are inlined as JSON.
+- Async models support the same behavior with `await`able `save/from_id/refresh`.
+
 ### Querying
 
 ```python

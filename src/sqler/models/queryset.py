@@ -45,6 +45,12 @@ class SQLerQuerySet(Generic[T]):
         docs = self._query.all_dicts()
         results: list[T] = []
         for d in docs:
+            # resolve relationship references before validation
+            try:
+                resolver = getattr(self._model_cls, "_resolve_relations")
+                d = resolver(d)  # type: ignore[assignment]
+            except Exception:
+                pass
             inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
             # attach db id if present but excluded from schema
             try:
@@ -59,6 +65,11 @@ class SQLerQuerySet(Generic[T]):
         d = self._query.first_dict()
         if d is None:
             return None
+        try:
+            resolver = getattr(self._model_cls, "_resolve_relations")
+            d = resolver(d)  # type: ignore[assignment]
+        except Exception:
+            pass
         inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
         try:
             inst._id = d.get("_id")  # type: ignore[attr-defined]
