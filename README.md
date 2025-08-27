@@ -1,5 +1,10 @@
 # SQLer
 
+[![PyPI version](https://img.shields.io/pypi/v/sqler)](https://pypi.org/project/sqler/)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+[![Tests](https://github.com/gabu-quest/SQLer/actions/workflows/ci.yml/badge.svg)](https://github.com/gabu-quest/SQLer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **A simple, flexible, and powerful micro-ORM for storing and querying JSON documents in SQLite.**
 
 SQLer is a Python library that provides a simple and intuitive way to work with JSON data in a SQLite database. It's designed to be a lightweight alternative to full-fledged ORMs, offering a balance of power and simplicity. It is heavily inspired by TinyDB and other similar document databases.
@@ -222,14 +227,11 @@ By design, parent `.save()` does not deep-save children; save related models exp
 
 ### Examples
 
-Run end-to-end scripts:
+See the full cookbook in `docs/EXAMPLES.md`. To run an example:
 
-- `examples/01_quickstart_sync.py`
-- `examples/02_queries.py`
-- `examples/03_relationships.py`
-- `examples/04_safe_models.py`
-- `examples/05_async_quickstart.py`
-- `examples/06_indexes_and_explain.py`
+```
+uv run python examples/01_quickstart_sync.py
+```
 
 ### Querying
 
@@ -355,7 +357,8 @@ uv run -q pytest -q
 
 ### Contributing & Style
 
-- Read the style guide: see `STYLE_GUIDE.md`.
+- Read the contributing guide: see `CONTRIBUTING.md`.
+- Full style guide: see `STYLE_GUIDE.md`.
 - Format and lint:
   - `uv run ruff format .`
   - `uv run ruff check .`
@@ -448,4 +451,29 @@ uv run python examples/sync_safe_model.py
 uv run python examples/async_model_quickstart.py
 uv run python examples/async_safe_model.py
 uv run python examples/model_arrays_any.py
+```
+## Zero-to-SQLer (60 seconds)
+
+```python
+from sqler import SQLerDB
+from sqler.models import SQLerModel
+from sqler.query import SQLerField as F
+
+class User(SQLerModel):
+    name: str
+    age: int
+
+db = SQLerDB.in_memory(shared=False)
+User.set_db(db)
+
+User(name="Alice", age=30).save()
+User(name="Bob", age=19).save()
+User(name="Charlie", age=25).save()
+
+adults = User.query().filter(F("age") >= 21).order_by("age").all()
+print([u.name for u in adults])  # ['Alice', 'Charlie']
+
+qs = User.query().filter((F("age") >= 21) & F("name").like("A%"))
+print(qs.sql)     # SELECT ...
+print(qs.params)  # [21, 'A%']
 ```
