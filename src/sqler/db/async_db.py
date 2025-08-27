@@ -103,11 +103,11 @@ class AsyncSQLerDB:
         )
         await self.adapter.commit()
         await cur.close()
-        # aiosqlite cursor.rowcount can be unreliable; verify
-        chk = await self.adapter.execute(f"SELECT _version FROM {table} WHERE _id = ?;", [_id])
-        row = await chk.fetchone()
-        await chk.close()
-        if not row or row[0] == expected_version:
+        # Check changes() to confirm update actually happened
+        ch = await self.adapter.execute("SELECT changes();")
+        row = await ch.fetchone()
+        await ch.close()
+        if not row or int(row[0]) == 0:
             raise RuntimeError("Stale version: update rejected")
         return _id, expected_version + 1
 
