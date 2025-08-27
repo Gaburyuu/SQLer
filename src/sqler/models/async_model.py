@@ -5,6 +5,7 @@ from pydantic import BaseModel, PrivateAttr
 
 from sqler.db.async_db import AsyncSQLerDB
 from sqler.query.async_query import AsyncSQLerQuery
+from sqler.models.async_queryset import AsyncSQLerQuerySet
 from sqler.query import SQLerExpression
 
 
@@ -42,12 +43,13 @@ class AsyncSQLerModel(BaseModel):
         return inst  # type: ignore[return-value]
 
     @classmethod
-    def query(cls: Type[TAModel]) -> AsyncSQLerQuery:
+    def query(cls: Type[TAModel]) -> AsyncSQLerQuerySet[TAModel]:
         db, table = cls._require_binding()
-        return AsyncSQLerQuery(table=table, adapter=db.adapter)
+        q = AsyncSQLerQuery(table=table, adapter=db.adapter)
+        return AsyncSQLerQuerySet[TAModel](cls, q)
 
     @classmethod
-    def filter(cls: Type[TAModel], expression: SQLerExpression) -> AsyncSQLerQuery:
+    def filter(cls: Type[TAModel], expression: SQLerExpression) -> AsyncSQLerQuerySet[TAModel]:
         return cls.query().filter(expression)
 
     async def save(self: TAModel) -> TAModel:
@@ -83,4 +85,3 @@ class AsyncSQLerModel(BaseModel):
             setattr(self, fname, getattr(fresh, fname))
         self._id = doc.get("_id")
         return self
-

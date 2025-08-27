@@ -76,6 +76,7 @@ class AsyncSQLerQuery:
         sql, params = self._build_query()
         cur = await self._adapter.execute(sql, params)
         rows = await cur.fetchall()
+        await cur.close()
         return [row[0] for row in rows]
 
     async def first(self) -> Optional[str]:
@@ -92,6 +93,7 @@ class AsyncSQLerQuery:
         count_sql = sql.replace("SELECT data", "SELECT count(*)")
         cur = await self._adapter.execute(count_sql, params)
         row = await cur.fetchone()
+        await cur.close()
         return int(row[0]) if row else 0
 
     async def all_dicts(self) -> list[dict[str, Any]]:
@@ -102,6 +104,7 @@ class AsyncSQLerQuery:
         sql, params = self._build_query(include_id=True)
         cur = await self._adapter.execute(sql, params)
         rows = await cur.fetchall()
+        await cur.close()
         docs: list[dict[str, Any]] = []
         for _id, data_json in rows:
             obj = json.loads(data_json)
@@ -112,4 +115,3 @@ class AsyncSQLerQuery:
     async def first_dict(self) -> Optional[dict[str, Any]]:
         res = await self.limit(1).all_dicts()
         return res[0] if res else None
-

@@ -280,3 +280,32 @@ uv run -q pytest -q
   - `uv run ruff check .`
 - Run tests with coverage (optional gate):
   - `uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90`
+
+### Async Quickstart
+
+Use the async adapter/DB/model for non-blocking workflows. The APIs mirror the sync counterparts.
+
+```python
+import asyncio
+from sqler import AsyncSQLiteAdapter, AsyncSQLerDB, AsyncSQLerModel
+from sqler.query import SQLerField as F
+
+class AUser(AsyncSQLerModel):
+    name: str
+    age: int
+
+async def main():
+    db = AsyncSQLerDB.in_memory()
+    await db.connect()
+    AUser.set_db(db)
+
+    u = AUser(name="Ada", age=36)
+    await u.save()
+
+    adults = await AUser.query().filter(F("age") >= 18).order_by("age").all()
+    print([a.name for a in adults])
+
+    await db.close()
+
+asyncio.run(main())
+```
