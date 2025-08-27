@@ -24,18 +24,14 @@ class AsyncSQLerQuery:
         self._limit = limit
 
     def filter(self, expression: SQLerExpression) -> Self:
-        new_expression = (
-            expression if self._expression is None else (self._expression & expression)
-        )
+        new_expression = expression if self._expression is None else (self._expression & expression)
         return self.__class__(
             self._table, self._adapter, new_expression, self._order, self._desc, self._limit
         )
 
     def exclude(self, expression: SQLerExpression) -> Self:
         not_expr = ~expression
-        new_expression = (
-            not_expr if self._expression is None else (self._expression & not_expr)
-        )
+        new_expression = not_expr if self._expression is None else (self._expression & not_expr)
         return self.__class__(
             self._table, self._adapter, new_expression, self._order, self._desc, self._limit
         )
@@ -54,7 +50,9 @@ class AsyncSQLerQuery:
         where = f"WHERE {self._expression.sql}" if self._expression else ""
         order = ""
         if self._order:
-            order = f"ORDER BY json_extract(data, '$.{self._order}')" + (" DESC" if self._desc else "")
+            order = f"ORDER BY json_extract(data, '$.{self._order}')" + (
+                " DESC" if self._desc else ""
+            )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
         select = "_id, data" if include_id else "data"
         sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()

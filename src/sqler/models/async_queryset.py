@@ -61,4 +61,3 @@ class AsyncSQLerQuerySet(Generic[T]):
 
     def params(self) -> list[Any]:
         return self._query.params
-

@@ -39,9 +39,7 @@ class AsyncSQLerDB:
     async def insert_document(self, table: str, doc: dict[str, Any]) -> int:
         await self._ensure_table(table)
         payload = json.dumps(doc)
-        cur = await self.adapter.execute(
-            f"INSERT INTO {table} (data) VALUES (json(?));", [payload]
-        )
+        cur = await self.adapter.execute(f"INSERT INTO {table} (data) VALUES (json(?));", [payload])
         await self.adapter.commit()
         last_id = cur.lastrowid  # type: ignore[attr-defined]
         await cur.close()

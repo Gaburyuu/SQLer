@@ -332,9 +332,7 @@ class SQLerDB:
             dict | None: Decoded document with ``_id`` and ``_version`` keys, or None.
         """
         self._ensure_versioned_table(table)
-        cur = self.adapter.execute(
-            f"SELECT _id, data, _version FROM {table} WHERE _id = ?;", [_id]
-        )
+        cur = self.adapter.execute(f"SELECT _id, data, _version FROM {table} WHERE _id = ?;", [_id])
         row = cur.fetchone()
         if not row:
             return None

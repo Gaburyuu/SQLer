@@ -88,4 +88,3 @@ class AsyncSQLiteAdapter:
             "PRAGMA temp_store = MEMORY",
         ]
         return cls(path, pragmas=pragmas)
-

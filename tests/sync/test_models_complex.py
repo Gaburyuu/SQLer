@@ -17,9 +17,21 @@ def setup_db():
 
 
 def seed(db):
-    Product(name="Laptop", price=1000, tags=["electronics", "computers"], items=[{"sku": "A1", "qty": 2}]).save()
-    Product(name="Mouse", price=50, tags=["electronics", "accessories"], items=[{"sku": "B2", "qty": 5}]).save()
-    Product(name="Keyboard", price=100, tags=["electronics", "accessories"], items=[{"sku": "C3", "qty": 1}]).save()
+    Product(
+        name="Laptop",
+        price=1000,
+        tags=["electronics", "computers"],
+        items=[{"sku": "A1", "qty": 2}],
+    ).save()
+    Product(
+        name="Mouse", price=50, tags=["electronics", "accessories"], items=[{"sku": "B2", "qty": 5}]
+    ).save()
+    Product(
+        name="Keyboard",
+        price=100,
+        tags=["electronics", "accessories"],
+        items=[{"sku": "C3", "qty": 1}],
+    ).save()
 
 
 def test_arrays_and_any_filters():
@@ -32,7 +44,7 @@ def test_arrays_and_any_filters():
         assert [x.name for x in p] == ["Mouse", "Keyboard", "Laptop"]
 
         # isin
-        p2 = Product.query().filter(F("tags").isin(["computers"])) .all()
+        p2 = Product.query().filter(F("tags").isin(["computers"])).all()
         assert [x.name for x in p2] == ["Laptop"]
 
         # any over array of objects: items[].qty > 3
@@ -45,9 +57,13 @@ def test_arrays_and_any_filters():
         assert [x.name for x in p4] == ["Keyboard"]
 
         # exclude + limit/desc
-        q = Product.query().exclude(F("tags").contains("accessories")).order_by("price", desc=True).limit(1)
+        q = (
+            Product.query()
+            .exclude(F("tags").contains("accessories"))
+            .order_by("price", desc=True)
+            .limit(1)
+        )
         first = q.first()
         assert first.name == "Laptop"
     finally:
         db.close()
-

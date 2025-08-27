@@ -76,4 +76,3 @@ class SQLerSafeModel(SQLerModel):
         self._id = doc.get("_id")
         self._version = doc.get("_version", 0)
         return self
-
