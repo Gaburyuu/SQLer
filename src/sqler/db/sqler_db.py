@@ -1,7 +1,8 @@
-from sqler.adapter import SQLiteAdapter
-from sqler.query import SQLerQuery
 import json
 from typing import Any, Optional
+
+from sqler.adapter import SQLiteAdapter
+from sqler.query import SQLerQuery
 
 
 class SQLerDB:
@@ -316,8 +317,7 @@ class SQLerDB:
         if getattr(cur, "rowcount", None) in (0, None):
             # sqlite3 cursor.rowcount may be -1, treat non-positive as conflict
             # double-check via select
-            chk = self.adapter.execute(f"SELECT _version FROM {table} WHERE _id = ?;", [_id])
-            row = chk.fetchone()
+            _ = self.adapter.execute(f"SELECT _version FROM {table} WHERE _id = ?;", [_id]).fetchone()
             raise RuntimeError("Stale version: update rejected")
         return _id, expected_version + 1
 

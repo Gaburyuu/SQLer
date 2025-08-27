@@ -3,6 +3,7 @@ import pytest
 pytest.importorskip("pytest_benchmark")
 
 import random
+
 from sqler import SQLerDB
 from sqler.query import SQLerField as F
 from sqler.query import SQLerQuery
@@ -56,4 +57,3 @@ def test_nested_any(array_db, benchmark):
 
     n = benchmark(_run)
     assert n > 0
-

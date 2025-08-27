@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Optional, TypeVar, Type
+from typing import Optional, Type, TypeVar
+
 from pydantic import PrivateAttr
 
 from .async_model import AsyncSQLerModel
-
 
 TASafe = TypeVar("TASafe", bound="AsyncSQLerSafeModel")
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Union, Type
+from typing import Any, List, Sequence, Type, Union
 
-from sqler.query.expression import SQLerExpression
 from sqler.models.model import SQLerModel
+from sqler.query.expression import SQLerExpression
 
 
 class SQLerModelField:
@@ -18,7 +18,9 @@ class SQLerModelField:
          )
     """
 
-    def __init__(self, model: Type[SQLerModel], path: Sequence[Union[str, int]], array_any: bool = False):
+    def __init__(
+        self, model: Type[SQLerModel], path: Sequence[Union[str, int]], array_any: bool = False
+    ):
         self.model = model
         self.path: List[Union[str, int]] = list(path)
         self.array_any = array_any
@@ -55,23 +57,21 @@ class SQLerModelField:
             table = first.lower() if first.lower().endswith("s") else f"{first.lower()}s"
 
         rest = self.path[1:]
-        json_rest = "".join(
-            (f"[{p}]" if isinstance(p, int) else f".{p}") for p in rest
-        )
+        json_rest = "".join((f"[{p}]" if isinstance(p, int) else f".{p}") for p in rest)
         outer_table = getattr(self.model, "_table", None) or self.model.__name__.lower() + "s"
         if self.array_any:
             # iterate refs array: json_each over $.<first>, join related on ref._id
             # EXISTS (SELECT 1 FROM json_each(outer.data,'$.first') a JOIN table r ON r._id = json_extract(a.value,'$._id') WHERE json_extract(r.data,'$.rest') OP ?)
-            joins = (
-                f"json_each({outer_table}.data, '$.{first}') a JOIN {table} r ON r._id = json_extract(a.value, '$._id')"
-            )
+            joins = f"json_each({outer_table}.data, '$.{first}') a JOIN {table} r ON r._id = json_extract(a.value, '$._id')"
             where_right = (
                 f"json_extract(r.data, '${json_rest}') {op} ?" if rest else f"r._id {op} ?"
             )
             sql = f"EXISTS (SELECT 1 FROM {joins} WHERE {where_right})"
         else:
             ref_json = f"$.{first}._id"
-            where_right = f"json_extract(r.data, '${json_rest}') {op} ?" if rest else f"r._id {op} ?"
+            where_right = (
+                f"json_extract(r.data, '${json_rest}') {op} ?" if rest else f"r._id {op} ?"
+            )
             sql = (
                 "EXISTS (SELECT 1 FROM "
                 f"{table} r WHERE r._id = json_extract({outer_table}.data, '{ref_json}') AND {where_right})"

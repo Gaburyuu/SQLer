@@ -1,5 +1,6 @@
 from sqler import SQLerDB
-from .models import User, Address, Order
+
+from .models import Address, Order, User
 
 _db = None
 
@@ -29,4 +30,3 @@ def close_db():
     if _db:
         _db.close()
         _db = None
-

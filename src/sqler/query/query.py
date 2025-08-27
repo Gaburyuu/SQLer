@@ -1,6 +1,7 @@
 from typing import Any, Optional, Self
-from sqler.query import SQLerExpression
+
 from sqler.adapter.abstract import AdapterABC
+from sqler.query import SQLerExpression
 
 
 class QueryError(Exception):

@@ -477,3 +477,18 @@ qs = User.query().filter((F("age") >= 21) & F("name").like("A%"))
 print(qs.sql)     # SELECT ...
 print(qs.params)  # [21, 'A%']
 ```
+
+## Why SQLer
+
+SQLer is a tiny, JSON-first data layer for SQLite that feels like Pydantic, not a full ORM.
+
+- JSON-first schema: Store structured docs in a single `data` JSON column; add targeted indexes when/where you need them. Zero migrations for iterative schemas.
+- Pydantic v2 models: Define models once, get `.save() / .refresh() / .delete()` and a chainable query API that returns model instances.
+- Simple, composable queries: `User.query().filter(F("age") > 21).order_by("age").limit(10).all()`. Under the hood you always get real SQL you can `.debug()` / `.explain()`.
+- Nested JSON made easy: `F(["meta","info","score"]) > 900`, array membership via `json_each`, and multi-level `any()` for arrays of objects.
+- Relationships without a heavy ORM: Reference other models with `{ "_table", "_id" }` and filter across them via correlated `EXISTS` (no FROM-clause surgery). Batch hydration avoids N+1.
+- Optimistic locking (opt-in): `SQLerSafeModel` adds a `_version` column and raises on stale writes. Good defaults for concurrent writers and FastAPI apps.
+- Sync/async parity: Use it in scripts or services; the async flavor mirrors the sync API.
+- No surprises: Pure SQLite + JSON1. When needed, you can always drop to raw SQL.
+
+When you want the power of SQL with the ergonomics of documents—and you don’t want a full ORM—SQLer hits the sweet spot.

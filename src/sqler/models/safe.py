@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional, Type, TypeVar
+
 from pydantic import PrivateAttr
 
 from .model import SQLerModel

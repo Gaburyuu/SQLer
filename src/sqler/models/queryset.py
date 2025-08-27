@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from typing import Any, Generic, Optional, Type, TypeVar
-from sqler.query import SQLerQuery, SQLerExpression
 
+from sqler.query import SQLerExpression, SQLerQuery
 
 T = TypeVar("T")
 
@@ -144,6 +144,7 @@ class SQLerQuerySet(Generic[T]):
         # replace in-doc refs with fetched payloads, per-document visited guard
         def make_replace():
             visited: set[tuple[str, int]] = set()
+
             def replace(value):
                 if isinstance(value, dict) and "_table" in value and "_id" in value:
                     key = (value["_table"], int(value["_id"]))
@@ -156,6 +157,7 @@ class SQLerQuerySet(Generic[T]):
                 if isinstance(value, list):
                     return [replace(v) for v in value]
                 return value
+
             return replace
 
         return [make_replace()(d) for d in docs]

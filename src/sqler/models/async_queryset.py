@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Generic, Optional, Type, TypeVar
-from sqler.query.async_query import AsyncSQLerQuery
-from sqler.query import SQLerExpression
 
+from sqler.query import SQLerExpression
+from sqler.query.async_query import AsyncSQLerQuery
 
 T = TypeVar("T")
 
@@ -97,9 +97,7 @@ class AsyncSQLerQuerySet(Generic[T]):
 
     async def explain_query_plan(self) -> list[tuple]:
         adapter = self._query._adapter  # type: ignore[attr-defined]
-        cur = await adapter.execute(
-            f"EXPLAIN QUERY PLAN {self._query.sql}", self._query.params
-        )
+        cur = await adapter.execute(f"EXPLAIN QUERY PLAN {self._query.sql}", self._query.params)
         rows = await cur.fetchall()
         await cur.close()
         return rows
@@ -132,6 +130,7 @@ class AsyncSQLerQuerySet(Generic[T]):
             await cur.close()
             for _id, data_json in rows:
                 import json
+
                 obj = json.loads(data_json)
                 obj["_id"] = _id
                 resolved[(table, int(_id))] = obj

@@ -38,7 +38,7 @@ def test_safe_model_stale_update_raises():
         original_version = c._version
 
         # simulate concurrent update: bump version behind the model's back
-        db.adapter.execute(f"UPDATE customers SET _version = _version + 1 WHERE _id = ?;", [c._id])
+        db.adapter.execute("UPDATE customers SET _version = _version + 1 WHERE _id = ?;", [c._id])
         db.adapter.commit()
 
         c.tier = 3
@@ -60,7 +60,7 @@ def test_safe_model_refresh_reads_version():
 
         # bump version via raw SQL
         db.adapter.execute(
-            f"UPDATE customers SET _version = _version + 1, data = json_set(data, '$.tier', 5) WHERE _id = ?;",
+            "UPDATE customers SET _version = _version + 1, data = json_set(data, '$.tier', 5) WHERE _id = ?;",
             [c._id],
         )
         db.adapter.commit()

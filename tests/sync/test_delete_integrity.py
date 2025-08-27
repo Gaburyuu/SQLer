@@ -1,6 +1,7 @@
 import pytest
+
 from sqler import SQLerDB
-from sqler.models import SQLerModel, ReferentialIntegrityError
+from sqler.models import ReferentialIntegrityError, SQLerModel
 
 
 class Address(SQLerModel):

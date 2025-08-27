@@ -1,5 +1,6 @@
 import sqlite3
-from typing import Optional, Any, Self
+from typing import Any, Optional, Self
+
 from .abstract import AdapterABC, NotConnectedError
 
 

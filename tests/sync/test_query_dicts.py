@@ -1,5 +1,4 @@
-import json
-from sqler.query import SQLerQuery, SQLerExpression
+from sqler.query import SQLerQuery
 
 
 def test_all_dicts_returns_parsed_with_id(dummy_adapter):

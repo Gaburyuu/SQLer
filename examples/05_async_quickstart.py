@@ -1,4 +1,5 @@
 import asyncio
+
 from sqler import AsyncSQLerDB, AsyncSQLerModel
 from sqler.query import SQLerField as F
 
@@ -22,4 +23,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

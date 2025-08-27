@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, Type
-
+from typing import Dict, Optional
 
 _REGISTRY: Dict[str, type] = {}
 

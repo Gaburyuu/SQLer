@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from .db import init_db, close_db
-from .models import User, Address, Order
+
 from sqler.query import SQLerField as F
+
+from .db import close_db, init_db
+from .models import Address, Order, User
 
 app = FastAPI(title="SQLer Demo")
 
@@ -83,4 +85,3 @@ def attach_order(user_id: int, order_id: int):
     u.add_order(o)
     u.save()
     return {"ok": True}
-

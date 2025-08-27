@@ -1,5 +1,6 @@
 from sqler import SQLerDB
-from sqler.models import SQLerModel, SQLerModelField as MF
+from sqler.models import SQLerModel
+from sqler.models import SQLerModelField as MF
 from sqler.query import SQLerField as F
 
 
@@ -49,13 +50,11 @@ def test_relationship_join_exists_query():
     # attach [o1,o2] to Alice
     alice = User.query().filter(F("name") == "Alice").first()
     alice_dict = db.find_document("users", alice._id)
-    alice_dict["orders"] = [{"_table": "orders", "_id": o1._id}, {"_table": "orders", "_id": o2._id}]
+    alice_dict["orders"] = [
+        {"_table": "orders", "_id": o1._id},
+        {"_table": "orders", "_id": o2._id},
+    ]
     db.upsert_document("users", alice._id, {k: v for k, v in alice_dict.items() if k != "_id"})
 
-    rich = (
-        User.query()
-        .filter(User.ref("orders").any().field("total") > 100)
-        .order_by("name")
-        .all()
-    )
+    rich = User.query().filter(User.ref("orders").any().field("total") > 100).order_by("name").all()
     assert [u.name for u in rich] == ["Alice"]

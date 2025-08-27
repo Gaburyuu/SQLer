@@ -21,6 +21,7 @@ def main():
 
     # filter by related
     from sqler.models import SQLerModelField as MF
+
     users = User.query().filter(MF(User, ["address", "city"]) == "Kyoto").all()
     print([x.name for x in users])
 
@@ -33,7 +34,9 @@ def main():
     print(type(raw[0].address))  # ref dict after validation
 
     # update nested and refresh
-    home.city = "Osaka"; home.save(); u.refresh()
+    home.city = "Osaka"
+    home.save()
+    u.refresh()
     print(u.address.city)
 
     db.close()
@@ -41,4 +44,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

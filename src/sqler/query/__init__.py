@@ -1,5 +1,5 @@
 from .expression import SQLerExpression
-from .query import SQLerQuery
 from .field import SQLerField
+from .query import SQLerQuery
 
 __all__ = ["SQLerExpression", "SQLerQuery", "SQLerField"]

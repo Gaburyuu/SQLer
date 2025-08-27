@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional, Type, TypeVar, ClassVar, Any
+import inspect
+from typing import Any, ClassVar, Optional, Type, TypeVar
+
 from pydantic import BaseModel, PrivateAttr
 
+from sqler import registry
 from sqler.db.async_db import AsyncSQLerDB
-from sqler.query.async_query import AsyncSQLerQuery
 from sqler.models.async_queryset import AsyncSQLerQuerySet
 from sqler.query import SQLerExpression
-from sqler import registry
-import inspect
-
 
 TAModel = TypeVar("TAModel", bound="AsyncSQLerModel")
 
@@ -132,15 +131,15 @@ class AsyncSQLerModel(BaseModel):
 
     async def _adump_with_relations(self) -> dict:
         async def aencode(value: Any):
-            from sqler.models.model import SQLerModel as _SM
-            from sqler.models.async_model import AsyncSQLerModel as _AM
+            from sqler.models.async_model import AsyncSQLerModel
+            from sqler.models.model import SQLerModel
 
-            if isinstance(value, _AM):
+            if isinstance(value, AsyncSQLerModel):
                 if value._id is None:
                     raise ValueError("Related async model must be saved before saving parent")
                 table = value.__class__._table
                 return {"_table": table, "_id": value._id}
-            if isinstance(value, _SM):
+            if isinstance(value, SQLerModel):
                 if value._id is None:
                     raise ValueError("Related model must be saved before saving parent")
                 table = value.__class__._table

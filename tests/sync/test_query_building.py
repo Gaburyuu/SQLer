@@ -1,6 +1,8 @@
-import pytest
-from sqler.query import SQLerQuery, SQLerExpression
 import json
+
+import pytest
+
+from sqler.query import SQLerExpression, SQLerQuery
 
 
 @pytest.fixture

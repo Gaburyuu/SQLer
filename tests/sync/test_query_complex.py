@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from sqler.query import SQLerField, SQLerQuery
@@ -402,7 +403,6 @@ def test_combined_filters(oligo_db):
     assert rows[0]["count"] == 15
 
 
-@pytest.mark.xfail(reason="mid-chain filtering not yet supported")
 def test_mid_chain_filter_on_nested_array(oligo_db):
     """
     this is a placeholder: should match any record where
@@ -437,18 +437,11 @@ def test_mid_chain_filter_on_nested_array(oligo_db):
         },
     )
 
-    # intent: query for oligos where any read has note == 'good' and, for that read, any mass.val > 10
-    # this is NOT currently supported by the query builder, but this test reminds us to add it
-    # if you were to try to express this with the current builder, it's not possible
-
-    # pseudo-code, not real code!
-    # expr = (
-    #   SQLerField(['reads']).any()
-    #     .where(SQLerField(['note']) == 'good')
-    #     ['masses'].any()['val'] > 10
-    # )
-
-    # This should match only "MIXED" because only it has a read with note=='good' and masses with val > 10
-
-    # Placeholder assertion: always fails, just to mark the intent for later
-    assert False, "mid-chain (scoped) filtering not yet supported"
+    # query for oligos where any read has note == 'good' and, for that read, any mass.val > 10
+    expr = (
+        SQLerField(["reads"]).any().where(SQLerField(["note"]) == "good")["masses"].any()["val"]
+        > 10
+    )
+    rows = [json.loads(j) for j in SQLerQuery("oligos", oligo_db.adapter).filter(expr).all()]
+    assert len(rows) == 1
+    assert rows[0]["sample_name"] == "MIXED"

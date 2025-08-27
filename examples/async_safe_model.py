@@ -1,4 +1,5 @@
 import asyncio
+
 from sqler import AsyncSQLerDB, AsyncSQLerSafeModel, StaleVersionError
 
 

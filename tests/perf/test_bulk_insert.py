@@ -4,6 +4,7 @@ pytest.importorskip("pytest_benchmark")
 
 import random
 import string
+
 from sqler import SQLerDB
 from sqler.query import SQLerField as F
 from sqler.query import SQLerQuery
@@ -58,4 +59,3 @@ def test_heavy_filter_sort_limit(perf_db, benchmark):
 
     result = benchmark(_run)
     assert len(result) == 200
-

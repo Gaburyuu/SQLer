@@ -30,7 +30,10 @@ def test_batch_hydration_reduces_fetches(monkeypatch):
     counter = {"address_selects": 0}
 
     def wrapped_execute(sql, params=None):
-        if sql.strip().lower().startswith("select _id, data from address") and " in (" in sql.lower():
+        if (
+            sql.strip().lower().startswith("select _id, data from address")
+            and " in (" in sql.lower()
+        ):
             counter["address_selects"] += 1
         return original_execute(sql, params)
 
@@ -41,4 +44,3 @@ def test_batch_hydration_reduces_fetches(monkeypatch):
     assert counter["address_selects"] <= 1
     # ensure hydrated
     assert isinstance(users[0].address, Address)
-

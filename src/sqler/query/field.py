@@ -1,4 +1,5 @@
-from typing import Any, List, Union, Optional
+from typing import Any, List, Optional, Tuple, Union
+
 from sqler.query import SQLerExpression
 
 
@@ -47,7 +48,9 @@ class SQLerField:
     def __init__(
         self,
         path: Union[str, List[Union[str, int]]],
-        alias_stack: Optional[List[tuple[str, str]]] = None,
+        alias_stack: Optional[
+            List[Union[tuple[str, str], tuple[str, str, Optional[SQLerExpression]]]]
+        ] = None,
     ):
         """
         path: a string (single field) or list of keys/indexes (deep/nested)
@@ -60,7 +63,9 @@ class SQLerField:
             self.path: List[Union[str, int]] = [path]
         else:
             self.path = list(path)
-        self.alias_stack: List[tuple[str, str]] = alias_stack or []
+        self.alias_stack: List[
+            Union[tuple[str, str], tuple[str, str, Optional[SQLerExpression]]]
+        ] = alias_stack or []
 
     def __repr__(self) -> str:
         return f"SQLerField({self.path!r}, alias_stack={self.alias_stack!r})"
@@ -91,7 +96,7 @@ class SQLerField:
                     parts.append(f".{segment}")
         return "".join(parts)
 
-    def any(self) -> "SQLerField":
+    def any(self) -> "SQLerAnyContext":
         """
         adds a .any() at this level for querying arrays of dicts
         lets you write things like:
@@ -112,7 +117,8 @@ class SQLerField:
         """
         alias = chr(ord("a") + len(self.alias_stack))
         field = self.path[-1]
-        return SQLerField(self.path, self.alias_stack + [(alias, field)])
+        base = SQLerField(self.path, self.alias_stack + [(alias, field, None)])
+        return SQLerAnyContext(base, alias)
 
     def __getitem__(self, item: Union[str, int]) -> "SQLerField":
         """
@@ -222,7 +228,7 @@ class SQLerAnyExpression(SQLerExpression):
     def __init__(
         self,
         path: List[Union[str, int]],
-        alias_stack: List[tuple[str, str]],
+        alias_stack: List[Union[tuple[str, str], tuple[str, str, Optional[SQLerExpression]]]],
         op: str,
         val: Any,
     ):
@@ -234,11 +240,22 @@ class SQLerAnyExpression(SQLerExpression):
         val: comparison value
         """
         # array_keys: just the array fields we .any()'d over
-        array_keys = [field for alias, field in alias_stack]
-        aliases = [alias for alias, field in alias_stack]
+        norm: List[tuple[str, str, Optional[SQLerExpression]]] = []
+        for entry in alias_stack:
+            if len(entry) == 2:  # type: ignore[arg-type]
+                a, f = entry  # type: ignore[misc]
+                norm.append((a, f, None))
+            else:
+                a, f, w = entry  # type: ignore[misc]
+                norm.append((a, f, w))
+
+        array_keys = [field for _, field, _ in norm]
+        aliases = [alias for alias, _, _ in norm]
         last_field = path[-1]
 
         joins: List[str] = []
+        where_clauses: List[str] = []
+        where_params: List[Any] = []
 
         # where does the arrays start in the path?
         first_array_key = array_keys[0]
@@ -249,17 +266,28 @@ class SQLerAnyExpression(SQLerExpression):
         first_alias = aliases[0]
         # first FROM: make a table out of the first array
         joins.append(f"json_each(json_extract(data, '{base_json}')) AS {first_alias}")
+        first_where = norm[0][2]
+        if first_where is not None:
+            wsql, wparams = _scope_expr(first_where, first_alias)
+            where_clauses.append(wsql)
+            where_params += wparams
         prev_alias = first_alias
 
         # handle more .any()s: join each nested array
-        for alias, array_key in alias_stack[1:]:
+        for alias, array_key, wexpr in norm[1:]:
             # e.g. JOIN json_each(json_extract(a.value, '$.arr2')) AS b
             joins.append(f"json_each(json_extract({prev_alias}.value, '$.{array_key}')) AS {alias}")
+            if wexpr is not None:
+                wsql, wparams = _scope_expr(wexpr, alias)
+                where_clauses.append(wsql)
+                where_params += wparams
             prev_alias = alias
 
         from_join = " JOIN ".join(joins)
         # always compare the last_field in the innermost joined alias
         where = f"json_extract({prev_alias}.value, '$.{last_field}') {op} ?"
+        if where_clauses:
+            where = " AND ".join(where_clauses + [where])
 
         # full EXISTS clause, e.g. for two-level array:
         # EXISTS (
@@ -269,4 +297,44 @@ class SQLerAnyExpression(SQLerExpression):
         #   WHERE json_extract(b.value, '$.score') > ?
         # )
         sql = f"EXISTS (SELECT 1 FROM {from_join} WHERE {where})"
-        super().__init__(sql, [val])
+        super().__init__(sql, where_params + [val])
+
+
+def _scope_expr(expr: SQLerExpression, alias: str) -> Tuple[str, list[Any]]:
+    """Transform an expression on root data into alias-scoped expression.
+
+    Rewrites JSON_EXTRACT(data, ...) to json_extract(<alias>.value, ...).
+    """
+    sql = expr.sql
+    sql = sql.replace("JSON_EXTRACT(data, ", f"json_extract({alias}.value, ")
+    sql = sql.replace("json_extract(data, ", f"json_extract({alias}.value, ")
+    return sql, expr.params
+
+
+class SQLerAnyContext:
+    """Context for mid-chain filters on any(). Use .where(expr)."""
+
+    def __init__(self, field: SQLerField, alias: str):
+        self._field = field
+        self._alias = alias
+
+    def where(self, expression: SQLerExpression) -> "SQLerAnyContext":
+        # attach to last alias entry
+        if not self._field.alias_stack:
+            return self
+        new_stack = list(self._field.alias_stack)
+        last = new_stack[-1]
+        if len(last) == 2:  # type: ignore[arg-type]
+            a, f = last  # type: ignore[misc]
+            new_stack[-1] = (a, f, expression)
+        else:
+            a, f, _ = last  # type: ignore[misc]
+            new_stack[-1] = (a, f, expression)
+        self._field = SQLerField(self._field.path, new_stack)
+        return self
+
+    def __getitem__(self, item: Union[str, int]) -> SQLerField:
+        return SQLerField(self._field.path + [item], self._field.alias_stack)
+
+    def __truediv__(self, other: str) -> SQLerField:
+        return SQLerField(self._field.path + [other], self._field.alias_stack)

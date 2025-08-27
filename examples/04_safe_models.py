@@ -11,7 +11,8 @@ def main():
     Account.set_db(db)
 
     acc = Account(owner="Ada", balance=100).save()
-    acc.balance = 120; acc.save()  # version 1
+    acc.balance = 120
+    acc.save()  # version 1
 
     try:
         db.adapter.execute("UPDATE accounts SET _version=_version+1 WHERE _id=?", [acc._id])
@@ -26,4 +27,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

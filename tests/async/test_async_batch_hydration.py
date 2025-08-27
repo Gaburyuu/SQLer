@@ -40,4 +40,3 @@ async def test_async_batch_hydration(async_db: AsyncSQLerDB, monkeypatch):
     users = await AUser.query().order_by("name").all()
     assert counter["address_in"] <= 1
     assert users and users[0].address is not None
-

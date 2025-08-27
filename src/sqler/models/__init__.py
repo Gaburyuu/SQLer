@@ -1,5 +1,14 @@
 from dataclasses import dataclass
 
+from .async_model import AsyncSQLerModel
+from .async_queryset import AsyncSQLerQuerySet
+from .async_safe import AsyncSQLerSafeModel
+from .model import SQLerModel
+from .model_field import SQLerModelField
+from .queryset import SQLerQuerySet
+from .ref import SQLerRef, as_ref
+from .safe import SQLerSafeModel, StaleVersionError
+
 
 class ReferentialIntegrityError(RuntimeError):
     """Raised when delete(on_delete='restrict') hits referencing rows."""
@@ -12,15 +21,6 @@ class BrokenRef:
     path: str
     target_table: str
     target_id: int
-
-from .model import SQLerModel
-from .queryset import SQLerQuerySet
-from .safe import SQLerSafeModel, StaleVersionError
-from .async_model import AsyncSQLerModel
-from .async_queryset import AsyncSQLerQuerySet
-from .async_safe import AsyncSQLerSafeModel
-from .model_field import SQLerModelField
-from .ref import SQLerRef, as_ref
 
 __all__ = [
     "SQLerModel",

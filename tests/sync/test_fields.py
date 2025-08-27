@@ -1,4 +1,4 @@
-from sqler.query import SQLerField, SQLerExpression
+from sqler.query import SQLerExpression, SQLerField
 
 
 def test_comparison_operators():

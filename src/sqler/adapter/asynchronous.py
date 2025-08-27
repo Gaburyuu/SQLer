@@ -1,5 +1,6 @@
+from typing import Any, List, Optional, Self
+
 import aiosqlite
-from typing import Optional, Any, Self, List
 
 
 class AsyncSQLiteAdapter:

@@ -1,4 +1,5 @@
-from typing import Optional, List
+from typing import List, Optional
+
 from sqler.models import SQLerModel
 from sqler.models.ref import as_ref
 
@@ -29,4 +30,3 @@ class User(SQLerModel):
         if order._id is None:
             raise ValueError("Save order first")
         self.orders.append(as_ref(order))
-

@@ -1,14 +1,14 @@
-from .adapter import SQLiteAdapter, NotConnectedError
+from .adapter import NotConnectedError, SQLiteAdapter
 from .db import SQLerDB
 from .db.async_db import AsyncSQLerDB
 from .models import (
+    AsyncSQLerModel,
+    AsyncSQLerQuerySet,
+    AsyncSQLerSafeModel,
     SQLerModel,
     SQLerQuerySet,
     SQLerSafeModel,
     StaleVersionError,
-    AsyncSQLerModel,
-    AsyncSQLerQuerySet,
-    AsyncSQLerSafeModel,
 )
 
 __all__ = [

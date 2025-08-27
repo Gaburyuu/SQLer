@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict, Optional
+from typing import Optional, TypedDict
 
 
 class SQLerRef(TypedDict):
@@ -19,4 +19,3 @@ def as_ref(model) -> SQLerRef:
     if not table or _id is None:
         raise ValueError("Cannot create ref: model must be bound and saved")
     return {"_table": table, "_id": int(_id)}
-

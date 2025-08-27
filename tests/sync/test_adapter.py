@@ -1,6 +1,8 @@
+from sqlite3 import OperationalError, ProgrammingError
+
 import pytest
-from sqler.adapter import AdapterABC, SQLiteAdapter, NotConnectedError
-from sqlite3 import ProgrammingError, OperationalError
+
+from sqler.adapter import AdapterABC, NotConnectedError, SQLiteAdapter
 
 
 def tests_run_at_all():

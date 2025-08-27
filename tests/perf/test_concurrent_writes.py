@@ -1,6 +1,6 @@
 import threading
 import time
-import pytest
+
 from sqler import SQLerDB
 from sqler.models import SQLerSafeModel, StaleVersionError
 from sqler.query import SQLerField as F
@@ -56,4 +56,3 @@ def test_concurrent_increments(tmp_path):
     assert obj.count == N_THREADS * INCR
     assert not errors
     db.close()
-

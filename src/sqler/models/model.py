@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional, Type, TypeVar
+from typing import ClassVar, Optional, Type, TypeVar
+
 from pydantic import BaseModel, PrivateAttr
 
+from sqler import registry
 from sqler.db.sqler_db import SQLerDB
 from sqler.models.queryset import SQLerQuerySet
-from sqler.query import SQLerQuery, SQLerExpression
-from sqler import registry
-from . import ReferentialIntegrityError, BrokenRef
+from sqler.query import SQLerExpression
 
+from . import BrokenRef, ReferentialIntegrityError
 
 TModel = TypeVar("TModel", bound="SQLerModel")
 
@@ -150,7 +151,14 @@ class SQLerModel(BaseModel):
         db.create_index(table, field, unique=unique, name=name, where=where)
 
     @classmethod
-    def ensure_index(cls, field: str, *, unique: bool = False, name: Optional[str] = None, where: Optional[str] = None) -> None:
+    def ensure_index(
+        cls,
+        field: str,
+        *,
+        unique: bool = False,
+        name: Optional[str] = None,
+        where: Optional[str] = None,
+    ) -> None:
         """Ensure an index on a JSON path or literal column exists (idempotent)."""
         cls.add_index(field, unique=unique, name=name, where=where)
 
@@ -234,7 +242,9 @@ class SQLerModel(BaseModel):
 
     # ----- ref integrity utils -----
     @classmethod
-    def _find_referrers(cls, db: SQLerDB, target_table: str, target_id: int) -> list[tuple[str, int, dict]]:
+    def _find_referrers(
+        cls, db: SQLerDB, target_table: str, target_id: int
+    ) -> list[tuple[str, int, dict]]:
         candidates: list[tuple[str, int, dict]] = []
         like1 = f'%"_table":"{target_table}"%'
         like2 = f'%"_id":{target_id}%'
@@ -293,7 +303,11 @@ class SQLerModel(BaseModel):
             obj = json.loads(row[1])
 
             def replace(value):
-                if isinstance(value, dict) and value.get("_table") == target_table and int(value.get("_id", -1)) == target_id:
+                if (
+                    isinstance(value, dict)
+                    and value.get("_table") == target_table
+                    and int(value.get("_id", -1)) == target_id
+                ):
                     return None
                 if isinstance(value, dict):
                     return {k: replace(v) for k, v in value.items()}
@@ -303,7 +317,9 @@ class SQLerModel(BaseModel):
 
             new_obj = replace(obj)
             payload = json.dumps(new_obj)
-            db.adapter.execute(f"UPDATE {table} SET data = json(?) WHERE _id = ?;", [payload, row_id])
+            db.adapter.execute(
+                f"UPDATE {table} SET data = json(?) WHERE _id = ?;", [payload, row_id]
+            )
             db.adapter.commit()
 
     @classmethod
@@ -347,7 +363,15 @@ class SQLerModel(BaseModel):
                         # check existence
                         cur2 = db.adapter.execute(f"SELECT 1 FROM {t} WHERE _id = ?;", [i])
                         if not cur2.fetchone():
-                            broken.append(BrokenRef(table=table, row_id=int(_id), path=path or "$", target_table=t, target_id=i))
+                            broken.append(
+                                BrokenRef(
+                                    table=table,
+                                    row_id=int(_id),
+                                    path=path or "$",
+                                    target_table=t,
+                                    target_id=i,
+                                )
+                            )
                         return
                     if isinstance(value, dict):
                         for k, v in value.items():
@@ -389,10 +413,10 @@ class SQLerModel(BaseModel):
         visited: set[tuple[str, int]] = set()
 
         def encode(value: object):
-            from sqler.models.model import SQLerModel as _M
+            from sqler.models.model import SQLerModel
             from sqler.models.ref import as_ref
 
-            if isinstance(value, _M):
+            if isinstance(value, SQLerModel):
                 # avoid recursion: require saved child
                 if value._id is None:
                     raise ValueError("Related model must be saved before saving parent")
