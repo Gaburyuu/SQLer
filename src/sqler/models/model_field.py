@@ -39,13 +39,19 @@ class SQLerModelField:
         # find table by inspecting registry mapping done in set_db; use child model's _table
         # fall back to pluralized field name if unknown
         try:
-            # try to resolve via model field annotation
-            rel_model = self.model.model_fields[first].annotation  # type: ignore[attr-defined]
-            table = getattr(rel_model, "_table", None) or getattr(rel_model, "__name__", "")
-            if not table or not isinstance(table, str):
+            # prefer registry-known names
+            from sqler import registry as _reg
+
+            keys = set(_reg.tables().keys())
+            if first in keys:
+                table = first
+            elif f"{first}s" in keys:
+                table = f"{first}s"
+            elif first.lower().endswith("s"):
+                table = first.lower()
+            else:
                 table = f"{first.lower()}s"
         except Exception:
-            # best-effort: use normalized token; avoid double 's'
             table = first.lower() if first.lower().endswith("s") else f"{first.lower()}s"
 
         rest = self.path[1:]

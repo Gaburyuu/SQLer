@@ -37,6 +37,11 @@ class AsyncSQLerQuerySet(Generic[T]):
     # execution
     async def all(self) -> list[T]:
         docs = await self._query.all_dicts()
+        if self._resolve:
+            try:
+                docs = await self._abatch_resolve(docs)
+            except Exception:
+                pass
         results: list[T] = []
         for d in docs:
             if self._resolve:
@@ -59,8 +64,7 @@ class AsyncSQLerQuerySet(Generic[T]):
             return None
         if self._resolve:
             try:
-                aresolver = getattr(self._model_cls, "_aresolve_relations")
-                d = await aresolver(d)  # type: ignore[assignment]
+                d = (await self._abatch_resolve([d]))[0]
             except Exception:
                 pass
         inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
@@ -79,3 +83,72 @@ class AsyncSQLerQuerySet(Generic[T]):
 
     def params(self) -> list[Any]:
         return self._query.params
+
+    # debug helpers
+    def debug(self) -> tuple[str, list[Any]]:
+        return (self._query.sql, self._query.params)
+
+    async def explain(self) -> list[tuple]:
+        adapter = self._query._adapter  # type: ignore[attr-defined]
+        cur = await adapter.execute(f"EXPLAIN {self._query.sql}", self._query.params)
+        rows = await cur.fetchall()
+        await cur.close()
+        return rows
+
+    async def explain_query_plan(self) -> list[tuple]:
+        adapter = self._query._adapter  # type: ignore[attr-defined]
+        cur = await adapter.execute(
+            f"EXPLAIN QUERY PLAN {self._query.sql}", self._query.params
+        )
+        rows = await cur.fetchall()
+        await cur.close()
+        return rows
+
+    async def _abatch_resolve(self, docs: list[dict]) -> list[dict]:
+        refs_by_table: dict[str, set[int]] = {}
+
+        def collect(value):
+            if isinstance(value, dict) and "_table" in value and "_id" in value:
+                refs_by_table.setdefault(value["_table"], set()).add(int(value["_id"]))
+            elif isinstance(value, dict):
+                for v in value.values():
+                    collect(v)
+            elif isinstance(value, list):
+                for v in value:
+                    collect(v)
+
+        for d in docs:
+            collect(d)
+
+        resolved: dict[tuple[str, int], dict] = {}
+        adapter = self._query._adapter  # type: ignore[attr-defined]
+        for table, ids in refs_by_table.items():
+            if not ids:
+                continue
+            placeholders = ",".join(["?"] * len(ids))
+            sql = f"SELECT _id, data FROM {table} WHERE _id IN ({placeholders})"
+            cur = await adapter.execute(sql, list(ids))
+            rows = await cur.fetchall()
+            await cur.close()
+            for _id, data_json in rows:
+                import json
+                obj = json.loads(data_json)
+                obj["_id"] = _id
+                resolved[(table, int(_id))] = obj
+
+        visited: set[tuple[str, int]] = set()
+
+        def replace(value):
+            if isinstance(value, dict) and "_table" in value and "_id" in value:
+                key = (value["_table"], int(value["_id"]))
+                if key in visited:
+                    return value
+                visited.add(key)
+                return resolved.get(key, value)
+            if isinstance(value, dict):
+                return {k: replace(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [replace(v) for v in value]
+            return value
+
+        return [replace(d) for d in docs]

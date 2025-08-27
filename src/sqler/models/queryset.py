@@ -96,6 +96,16 @@ class SQLerQuerySet(Generic[T]):
         """Return the underlying parameter list."""
         return self._query.params
 
+    # debug helpers passthrough
+    def debug(self) -> tuple[str, list[Any]]:
+        return self._query.debug()
+
+    def explain(self, adapter) -> list[tuple]:
+        return self._query.explain(adapter)
+
+    def explain_query_plan(self, adapter) -> list[tuple]:
+        return self._query.explain_query_plan(adapter)
+
     # --- internal: batch resolve references to avoid N+1 ---
     def _batch_resolve(self, docs: list[dict]) -> list[dict]:
         # collect refs grouped by table
@@ -131,15 +141,21 @@ class SQLerQuerySet(Generic[T]):
                 obj["_id"] = _id
                 resolved[(table, int(_id))] = obj
 
-        # replace in-doc refs with fetched payloads
-        def replace(value):
-            if isinstance(value, dict) and "_table" in value and "_id" in value:
-                key = (value["_table"], int(value["_id"]))
-                return resolved.get(key, value)
-            if isinstance(value, dict):
-                return {k: replace(v) for k, v in value.items()}
-            if isinstance(value, list):
-                return [replace(v) for v in value]
-            return value
+        # replace in-doc refs with fetched payloads, per-document visited guard
+        def make_replace():
+            visited: set[tuple[str, int]] = set()
+            def replace(value):
+                if isinstance(value, dict) and "_table" in value and "_id" in value:
+                    key = (value["_table"], int(value["_id"]))
+                    if key in visited:
+                        return value
+                    visited.add(key)
+                    return resolved.get(key, value)
+                if isinstance(value, dict):
+                    return {k: replace(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [replace(v) for v in value]
+                return value
+            return replace
 
-        return [replace(d) for d in docs]
+        return [make_replace()(d) for d in docs]

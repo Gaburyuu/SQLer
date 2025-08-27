@@ -26,7 +26,12 @@ class AsyncSQLerModel(BaseModel):
     @classmethod
     def set_db(cls, db: AsyncSQLerDB, table: Optional[str] = None) -> None:
         cls._db = db
-        cls._table = table or cls.__name__.lower() + "s"
+        base = cls.__name__.lower()
+        if not base.endswith("s"):
+            base = base + "s"
+        if base in {"as"}:
+            base = base + "_tbl"
+        cls._table = table or base
         registry.register(cls._table, cls)
 
     @classmethod
@@ -131,11 +136,13 @@ class AsyncSQLerModel(BaseModel):
             from sqler.models.async_model import AsyncSQLerModel as _AM
 
             if isinstance(value, _AM):
-                await value.save()
+                if value._id is None:
+                    raise ValueError("Related async model must be saved before saving parent")
                 table = value.__class__._table
                 return {"_table": table, "_id": value._id}
             if isinstance(value, _SM):
-                value.save()
+                if value._id is None:
+                    raise ValueError("Related model must be saved before saving parent")
                 table = value.__class__._table
                 return {"_table": table, "_id": value._id}
             if isinstance(value, list):

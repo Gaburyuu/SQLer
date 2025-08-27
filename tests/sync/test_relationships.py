@@ -17,7 +17,7 @@ def test_relationship_save_load_refresh():
     Address.set_db(db)
     User.set_db(db)
 
-    addr = Address(city="Kyoto", country="JP")
+    addr = Address(city="Kyoto", country="JP").save()
     u = User(name="Alice", address=addr)
     u.save()
 
@@ -38,4 +38,3 @@ def test_relationship_save_load_refresh():
     assert loaded.address.city == "Osaka"
 
     db.close()
-

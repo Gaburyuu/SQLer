@@ -7,13 +7,20 @@ from sqler.db.sqler_db import SQLerDB
 from sqler.models.queryset import SQLerQuerySet
 from sqler.query import SQLerQuery, SQLerExpression
 from sqler import registry
+from . import ReferentialIntegrityError, BrokenRef
 
 
 TModel = TypeVar("TModel", bound="SQLerModel")
 
 
 def _default_table_name(name: str) -> str:
-    return name.lower() + "s"
+    base = name.lower()
+    if not base.endswith("s"):
+        base = base + "s"
+    # avoid SQL reserved words like 'as'
+    if base in {"as"}:
+        base = base + "_tbl"
+    return base
 
 
 class SQLerModel(BaseModel):
@@ -164,13 +171,36 @@ class SQLerModel(BaseModel):
     def delete(self) -> None:
         """Delete this instance by ``_id`` and unset it.
 
-        Raises:
-            ValueError: If the instance has not been saved.
+        Deprecated: prefer delete(on_delete=...) to control integrity behavior.
+        """
+        self.delete_with_policy()
+
+    def delete_with_policy(self, *, on_delete: str = "restrict") -> None:
+        """Delete this instance with a specified integrity policy.
+
+        Args:
+            on_delete: One of "restrict", "set_null", or "cascade".
         """
         cls = self.__class__
         db, table = cls._require_binding()
         if self._id is None:
             raise ValueError("Cannot delete unsaved model (missing _id)")
+        target = (table, int(self._id))
+        if on_delete not in {"restrict", "set_null", "cascade"}:
+            raise ValueError("on_delete must be 'restrict','set_null', or 'cascade'")
+
+        # find referrers
+        referrers = self._find_referrers(db, table, int(self._id))
+        if on_delete == "restrict" and referrers:
+            raise ReferentialIntegrityError(
+                f"Cannot delete {table}:{self._id}; referenced by {len(referrers)} row(s)"
+            )
+        if on_delete == "set_null":
+            self._set_null_referrers(db, table, int(self._id), referrers)
+        elif on_delete == "cascade":
+            visited: set[tuple[str, int]] = {target}
+            self._cascade_delete(db, referrers, visited)
+
         db.delete_document(table, self._id)
         self._id = None
 
@@ -202,6 +232,134 @@ class SQLerModel(BaseModel):
         self._id = doc.get("_id")
         return self
 
+    # ----- ref integrity utils -----
+    @classmethod
+    def _find_referrers(cls, db: SQLerDB, target_table: str, target_id: int) -> list[tuple[str, int, dict]]:
+        candidates: list[tuple[str, int, dict]] = []
+        like1 = f'%"_table":"{target_table}"%'
+        like2 = f'%"_id":{target_id}%'
+        for table in registry.tables().keys():
+            # skip tables not present in this DB
+            exists = db.adapter.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;", [table]
+            ).fetchone()
+            if not exists:
+                continue
+            cur = db.adapter.execute(
+                f"SELECT _id, data FROM {table} WHERE data LIKE ? AND data LIKE ?;",
+                [like1, like2],
+            )
+            rows = cur.fetchall()
+            import json
+
+            for _id, data_json in rows:
+                try:
+                    data = json.loads(data_json)
+                except Exception:
+                    continue
+                paths = cls._find_ref_paths(data, target_table, target_id)
+                if paths:
+                    candidates.append((table, int(_id), {"paths": paths}))
+        return candidates
+
+    @classmethod
+    def _find_ref_paths(cls, data: dict, target_table: str, target_id: int) -> list[str]:
+        paths: list[str] = []
+
+        def walk(value, path: str):
+            if isinstance(value, dict):
+                if value.get("_table") == target_table and int(value.get("_id", -1)) == target_id:
+                    paths.append(path or "$")
+                for k, v in value.items():
+                    walk(v, f"{path}.{k}" if path else k)
+            elif isinstance(value, list):
+                for i, v in enumerate(value):
+                    walk(v, f"{path}[{i}]")
+
+        walk(data, "")
+        return paths
+
+    @classmethod
+    def _set_null_referrers(
+        cls, db: SQLerDB, target_table: str, target_id: int, referrers: list[tuple[str, int, dict]]
+    ) -> None:
+        import json
+
+        for table, row_id, meta in referrers:
+            cur = db.adapter.execute(f"SELECT _id, data FROM {table} WHERE _id = ?;", [row_id])
+            row = cur.fetchone()
+            if not row:
+                continue
+            obj = json.loads(row[1])
+
+            def replace(value):
+                if isinstance(value, dict) and value.get("_table") == target_table and int(value.get("_id", -1)) == target_id:
+                    return None
+                if isinstance(value, dict):
+                    return {k: replace(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [replace(v) for v in value]
+                return value
+
+            new_obj = replace(obj)
+            payload = json.dumps(new_obj)
+            db.adapter.execute(f"UPDATE {table} SET data = json(?) WHERE _id = ?;", [payload, row_id])
+            db.adapter.commit()
+
+    @classmethod
+    def _cascade_delete(
+        cls, db: SQLerDB, referrers: list[tuple[str, int, dict]], visited: set[tuple[str, int]]
+    ) -> None:
+        for table, row_id, _ in referrers:
+            key = (table, row_id)
+            if key in visited:
+                continue
+            visited.add(key)
+            # recurse
+            kid_refs = cls._find_referrers(db, table, row_id)
+            cls._cascade_delete(db, kid_refs, visited)
+            db.delete_document(table, row_id)
+
+    # ----- reference validation -----
+    @classmethod
+    def validate_references(cls) -> list[BrokenRef]:
+        db, _ = cls._require_binding()
+        broken: list[BrokenRef] = []
+        import json
+
+        for table in registry.tables().keys():
+            exists = db.adapter.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;", [table]
+            ).fetchone()
+            if not exists:
+                continue
+            cur = db.adapter.execute(f"SELECT _id, data FROM {table};")
+            for _id, data_json in cur.fetchall():
+                try:
+                    data = json.loads(data_json)
+                except Exception:
+                    continue
+
+                def walk(value, path: str):
+                    if isinstance(value, dict) and "_table" in value and "_id" in value:
+                        t = value.get("_table")
+                        i = int(value.get("_id", -1))
+                        # check existence
+                        cur2 = db.adapter.execute(f"SELECT 1 FROM {t} WHERE _id = ?;", [i])
+                        if not cur2.fetchone():
+                            broken.append(BrokenRef(table=table, row_id=int(_id), path=path or "$", target_table=t, target_id=i))
+                        return
+                    if isinstance(value, dict):
+                        for k, v in value.items():
+                            walk(v, f"{path}.{k}" if path else k)
+                    elif isinstance(value, list):
+                        for idx, v in enumerate(value):
+                            walk(v, f"{path}[{idx}]")
+
+                walk(data, "")
+
+        return broken
+
     # ----- relationship encoding/decoding -----
     @classmethod
     def _is_ref_dict(cls, value: object) -> bool:
@@ -228,12 +386,18 @@ class SQLerModel(BaseModel):
         return {k: decode(v) for k, v in data.items()}
 
     def _dump_with_relations(self) -> dict:
+        visited: set[tuple[str, int]] = set()
+
         def encode(value: object):
             from sqler.models.model import SQLerModel as _M
             from sqler.models.ref import as_ref
 
             if isinstance(value, _M):
-                value.save()
+                # avoid recursion: require saved child
+                if value._id is None:
+                    raise ValueError("Related model must be saved before saving parent")
+                if (value.__class__._table, int(value._id)) not in visited:  # type: ignore[attr-defined]
+                    visited.add((value.__class__._table, int(value._id)))  # type: ignore[attr-defined]
                 return as_ref(value)
             # already a ref dict: validate minimally
             if isinstance(value, dict) and "_table" in value and "_id" in value:

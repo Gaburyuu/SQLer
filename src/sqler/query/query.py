@@ -138,6 +138,22 @@ class SQLerQuery:
         """Return the current parameter list."""
         return self._build_query()[1]
 
+    def debug(self) -> tuple[str, list[Any]]:
+        """Return (sql, params) for debugging."""
+        return self._build_query()
+
+    def explain(self, adapter) -> list[tuple]:
+        """Run EXPLAIN <sql> using the provided adapter; return raw rows."""
+        sql, params = self._build_query()
+        cur = adapter.execute(f"EXPLAIN {sql}", params)
+        return cur.fetchall()
+
+    def explain_query_plan(self, adapter) -> list[tuple]:
+        """Run EXPLAIN QUERY PLAN <sql>; return raw rows."""
+        sql, params = self._build_query()
+        cur = adapter.execute(f"EXPLAIN QUERY PLAN {sql}", params)
+        return cur.fetchall()
+
     def all(self) -> list[dict[str, Any]]:
         """Execute and return all matching rows as raw JSON strings.
 

@@ -1,109 +1,89 @@
-Codex crushed it. We’re in great shape to close out relationships before rolling into M6. Here’s the tight, do-first list with concrete acceptance criteria and test targets so you can hand it straight to Codex.
+are we ready to move onto m6? -- Short answer: almost. We knocked out hydration + cycles, async batch parity, model-aware fields, and debug helpers. The one pre-M6 item still outstanding from the checklist is **delete & integrity policies** (`restrict | set_null | cascade`) + a **validate_references()** utility. I strongly recommend we land that first (it’s small, self-contained), then roll straight into M6 docs.
 
-# 🔒 Finish M5 (relationships) before M6
+Here’s the tight plan to finish M5 and then start M6 immediately:
 
-## A) Delete & integrity policies (ship-blocker)
+# Finish M5 (final blocker)
 
-**API**
+## Delete & integrity policies
 
-- `SQLerModel.delete(*, on_delete: Literal["restrict","set_null","cascade"]="restrict") -> None`
-- `SQLerModel.validate_references() -> list[BrokenRef]` (where `BrokenRef = dataclass(table:str, row_id:int, path:str, target_table:str, target_id:int)`)
+- **API**
 
-**Behavior**
+  - `ReferentialIntegrityError(Exception)`
+  - `SQLerModel.delete(*, on_delete: Literal["restrict","set_null","cascade"]="restrict")`
+  - `SQLerModel.validate_references() -> list[BrokenRef]` where `BrokenRef` holds `(table, row_id, path, target_table, target_id)`
 
-- **restrict**: if any other row (any model bound to the same DB) references this row (single ref or in a list), raise `ReferentialIntegrityError`.
-- **set_null**: recursively traverse JSON of referrers; replace matching ref (or element in list) with `None`; upsert those rows.
-- **cascade**: delete referrers (respecting their own `on_delete`—default to “restrict” unless caller passes “cascade” explicitly). Guard cycles.
+- **Behavior**
 
-**Implementation (pragmatic v1)**
+  - `restrict`: if any row in any registered table references this row (single ref or in a list), raise `ReferentialIntegrityError`.
+  - `set_null`: locate all references and replace them with `None` (for lists, remove the matching element or set to `None`—document which we choose; I suggest **set to None** for stability), then upsert referrers.
+  - `cascade`: delete all referrers (respecting their own `on_delete`), with a visited set to avoid cycles.
 
-- Use a DB-wide model registry you already have to enumerate tables.
-- Find candidate referrers per table cheaply:
+- **Implementation sketch**
 
-  - SQL prefilter: `WHERE data LIKE '%"_table":"<target>"%' AND data LIKE '%"_id":<id>%'`
-  - Then Python-validate by loading JSON and walking the structure to confirm true matches and collect JSON paths.
+  - Use the model registry you added to enumerate bound tables.
+  - Fast prefilter: `WHERE data LIKE '%"_table":"<target_table>"%' AND data LIKE '%"_id":<id>%'`.
+  - Python-validate by loading JSON and walking it to confirm true refs and collect JSON paths; return those paths from `validate_references()`.
+  - Apply chosen policy; keep a `visited={(table,id)}` set for cascade.
 
-- For `set_null`: modify in Python (walk and set `None`), then `upsert`.
-- For `cascade`: delete those rows; maintain a visited set `{(table,id)}` to avoid cycles.
+- **Tests** (`tests/sync/test_delete_integrity.py`)
 
-**Tests** (`tests/sync/test_delete_integrity.py`)
+  - `test_restrict_blocks_when_referenced()`
+  - `test_set_null_clears_single_and_list_refs()`
+  - `test_cascade_deletes_referrers_and_avoids_cycles()`
 
-- `test_restrict_blocks_when_referenced()`
-- `test_set_null_clears_single_ref_and_list_refs()`
-- `test_cascade_deletes_referrers_and_avoids_cycles()`
-
-## B) Cycle guards & deep hydration (ship-blocker)
-
-- Hydration already batches; add a `visited: set[tuple[str,int]]` across the whole result hydration pass to prevent infinite recursion in cyclic graphs (A→B→A).
-- Test with two models that reference each other; `.all()` does not recurse forever and returns hydrated once.
-
-**Tests**
-
-- `test_hydration_handles_cycle_once()` – hydrated objects contain single-level related instance (or a lightweight ref after first hop), no recursion.
-
-## C) Async parity for batch hydration (ship-blocker)
-
-- Mirror the batch resolver you added for sync into `AsyncSQLerQuerySet` with `await`ed batched fetches per table.
-- Ensure `.resolve(False)` behaves identically to sync.
-
-**Tests** (`tests/async/test_async_batch_hydration.py`)
-
-- Same scenario as sync: 200 users → 3 addresses, assert a single `SELECT … WHERE _id IN (…)` per table (you can spy adapter calls).
-
-## D) Debug helpers (nice-to-have, quick)
-
-- `SQLerQuery.debug() -> tuple[str, list[Any]]` (returns current SQL & params).
-- `SQLerQuery.explain(adapter) -> list[tuple]` and `explain_query_plan(adapter) -> list[tuple]]` that run:
-
-  - `EXPLAIN <sql>` and `EXPLAIN QUERY PLAN <sql>` with the same params.
-
-- Add passthroughs on `SQLerQuerySet` (sync & async):
-
-  - `.debug()`, `.explain(adapter)`, `.explain_query_plan(adapter)` (async versions `await qs.explain(...)`).
-
-**Tests** (`tests/sync/test_query_debug_explain.py`)
-
-- `test_debug_returns_sql_and_params()`
-- `test_explain_query_plan_runs_and_returns_rows()` (smoke)
-
-## E) README additions (relationships section)
-
-- **Saving refs**: `user.address = as_ref(addr)`; lists of refs; saving models vs saving refs; `save_deep()` (if we add it later).
-- **Filtering**: `MF(User, ["address","city"]) == "Kyoto"` and `User.ref("address").field("city") == "Kyoto"`.
-- **Hydration**: default on, `.resolve(False)` to skip; batch behavior; cycles note.
-- **Indexes**: `ensure_index("address._id")`, `ensure_index("orders._id")`; show `qs.explain_query_plan()` diff.
-- **Safe model nuance**: parent saves don’t bump child versions; update child with its own `save()` (or document `save_deep()` plan if you want it).
+Once that’s green, we’re officially M6-ready.
 
 ---
 
-## Hand-off to Codex (drop-in spec)
+# M6 — Docs & DX polish (go next)
 
-1. **Delete policies**
+## 1) README overhaul (single, thorough doc)
 
-- Add `ReferentialIntegrityError`.
-- Implement `SQLerModel.delete(on_delete=...)` per rules above.
-- Add `SQLerModel.validate_references()` scanning all bound tables using LIKE prefilter + Python validation.
+- **Top badges:** PyPI, CI, Ruff, license.
+- **Zero-to-SQLer (60s):** install + minimal example (sync) + async snippet.
+- **Model layer:** table-per-model, default table naming, `set_db`, `_id` private attr.
+- **Querying:** fields, comparisons, `& | ~`, nesting, `.any()` arrays, `contains/isin/like`, order/limit, `.debug()/.explain_query_plan()`.
+- **Relationships:**
 
-2. **Cycle guards**
+  - Saving refs with `as_ref()` (and arrays of refs).
+  - Filtering via `SQLerModel.ref("address").field("city") == "Kyoto"` and via `SQLerModelField`.
+  - Hydration: default on, `.resolve(False)` to skip; batch behavior; cycles note.
 
-- In both sync/async hydration: maintain a `visited` set to prevent repeat hydration of the same `(table,_id)` within one materialization pass.
+- **Safe models:** optimistic locking, version bumps, stale update error; when to use.
+- **Async parity:** quickstart for `AsyncSQLiteAdapter`, `AsyncSQLerDB`, `AsyncSQLerModel`, async queryset.
+- **Indexes & perf:** `ensure_index("address._id")`, JSON path indexes, `EXPLAIN QUERY PLAN` demo.
+- **Debugging:** `.debug()`, `.explain()`, `.explain_query_plan()`.
+- **Limitations & roadmap:** mid-chain scoped filters (xfail), future joins, migrations.
+- **Testing:** `uv run pytest -q`; Ruff pre-commit.
+- **Versioning:** SemVer; Python 3.12+; Pydantic v2.
 
-3. **Async batch parity**
+## 2) Examples folder (runnable)
 
-- Port sync batch resolver to async; add tests that assert batched IN queries instead of N+1.
+- `examples/01_quickstart_sync.py`
+- `examples/02_queries.py` (arrays/any/contains/isin)
+- `examples/03_relationships.py` (save refs, filter, hydration)
+- `examples/04_safe_models.py`
+- `examples/05_async_quickstart.py`
+- `examples/06_indexes_and_explain.py`
 
-4. **Debug helpers**
+## 3) Docstrings/API polish
 
-- Implement `.debug()`, `.explain()`, `.explain_query_plan()` on `SQLerQuery` (+ wrapper on QuerySet; async variants).
+- Ensure public classes/methods have crisp docstrings (models, query, field, model-aware field, debug helpers).
+- Keep examples short and copy-pastable.
 
-5. **Tests**
+## 4) CI tweaks (docs & checks)
 
-- Add the 4 files outlined above; keep counts/adapter-invocation assertions to prove batching and explain usage.
+- Add a README link-check job (optional).
+- Keep Ruff + pytest matrix as is.
+- Add an examples smoke job (run a couple of scripts).
 
-Once those are green, we’re truly M6-ready. After that, I’d line up:
+---
 
-- **M6 Docs/Examples** (full README reorg + cookbook)
-- **M7 CLI** (`sqler init`, `sqler inspect`, `sqler explain <query>` for quick introspection)
-- **M8 Perf** (optional): JSON indices guidance, covering indexes demo, and a small benchmark script.
+## What I’d tell Codex to do next (you can paste this)
 
-Want me to draft the test skeletons verbatim so Codex can fill in implementation, or is this enough direction?
+1. Implement delete/integrity policies + `validate_references()` per spec above and add the three new tests.
+2. When tests pass, generate/expand README sections listed in M6, plus the `examples/` scripts.
+3. Add `.resolve(False)` mention and explain/debug sections to README; include a tiny `EXPLAIN QUERY PLAN` output example.
+4. Optional: add a CI job that runs one example script.
+
+If you’re good with that, we can call M5 closed after the delete policies, and move straight into M6 docs.

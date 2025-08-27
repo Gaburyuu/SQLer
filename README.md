@@ -188,6 +188,49 @@ Notes:
 - Pydantic submodels (non‑SQLerModel) are inlined as JSON.
 - Async models support the same behavior with `await`able `save/from_id/refresh`.
 
+### Relationship Filtering
+
+- Model-aware sugar:
+  - `User.ref("address").field("city") == "Kyoto"`
+- Lower-level API:
+  - `from sqler.models import SQLerModelField as MF`
+  - `MF(User, ["address","city"]) == "Kyoto"`
+- Arrays of refs: `User.ref("orders").any().field("total") > 100`
+
+Hydration is on by default; use `.resolve(False)` on the queryset to skip relationship hydration.
+
+### Saving Refs
+
+- Assign models directly: `user.address = addr; addr.save(); user.save()`
+- Or use ref dicts: `from sqler.models import as_ref; user.address = as_ref(addr)`
+- Arrays of refs: `user.orders = [as_ref(o1), as_ref(o2)]`
+
+By design, parent `.save()` does not deep-save children; save related models explicitly.
+
+### Debugging & Explain
+
+- `qs.debug()` returns `(sql, params)`.
+- `qs.explain_query_plan(adapter)` returns raw rows from `EXPLAIN QUERY PLAN`.
+  Use it to compare plans before/after `ensure_index(...)`.
+
+### Indexes for Relations
+
+- Ensure indexes on ref keys and common JSON paths:
+  - `User.ensure_index("address._id")`
+  - `User.ensure_index("address.city")`
+  - `User.ensure_index("orders._id")`
+
+### Examples
+
+Run end-to-end scripts:
+
+- `examples/01_quickstart_sync.py`
+- `examples/02_queries.py`
+- `examples/03_relationships.py`
+- `examples/04_safe_models.py`
+- `examples/05_async_quickstart.py`
+- `examples/06_indexes_and_explain.py`
+
 ### Querying
 
 ```python
