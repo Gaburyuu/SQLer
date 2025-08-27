@@ -255,3 +255,90 @@ class SQLerDB:
         ddl = f"DROP INDEX IF EXISTS {name};"
         self.adapter.execute(ddl)
         self.adapter.commit()
+
+    # ---- versioned (optimistic locking) helpers ----
+
+    def _ensure_versioned_table(self, table: str) -> None:
+        """Ensure the target table exists and has a ``_version`` column.
+
+        This upgrades an existing non-versioned table by adding the column.
+
+        Args:
+            table: Table name.
+        """
+        self._ensure_table(table)
+        cur = self.adapter.execute(f"PRAGMA table_info({table});")
+        cols = [row[1] for row in cur.fetchall()]
+        if "_version" not in cols:
+            self.adapter.execute(
+                f"ALTER TABLE {table} ADD COLUMN _version INTEGER NOT NULL DEFAULT 0;"
+            )
+            self.adapter.commit()
+
+    def upsert_with_version(
+        self, table: str, _id: Optional[int], doc: dict[str, Any], expected_version: Optional[int]
+    ) -> tuple[int, int]:
+        """Insert or update a document with optimistic locking.
+
+        On insert, ``_version`` is set to 0. On update, the row is updated only
+        if the stored version matches ``expected_version``; on success, ``_version``
+        is incremented by 1.
+
+        Args:
+            table: Table name.
+            _id: Existing row id for update; ``None`` to insert.
+            doc: Document to write.
+            expected_version: Version expected by the caller for update; ignored on insert.
+
+        Returns:
+            tuple[int, int]: The row id and the new version after the operation.
+
+        Raises:
+            ValueError: If updating with ``_id`` but ``expected_version`` is None.
+            RuntimeError: On stale version conflicts (no rows updated).
+        """
+        self._ensure_versioned_table(table)
+        payload = json.dumps(doc)
+        if _id is None:
+            cur = self.adapter.execute(
+                f"INSERT INTO {table} (data, _version) VALUES (json(?), 0);",
+                [payload],
+            )
+            self.adapter.commit()
+            return cur.lastrowid, 0
+        if expected_version is None:
+            raise ValueError("expected_version required for update")
+        cur = self.adapter.execute(
+            f"UPDATE {table} SET data = json(?), _version = _version + 1 WHERE _id = ? AND _version = ?;",
+            [payload, _id, expected_version],
+        )
+        self.adapter.commit()
+        if getattr(cur, "rowcount", None) in (0, None):
+            # sqlite3 cursor.rowcount may be -1, treat non-positive as conflict
+            # double-check via select
+            chk = self.adapter.execute(f"SELECT _version FROM {table} WHERE _id = ?;", [_id])
+            row = chk.fetchone()
+            raise RuntimeError("Stale version: update rejected")
+        return _id, expected_version + 1
+
+    def find_document_with_version(self, table: str, _id: int) -> Optional[dict[str, Any]]:
+        """Fetch a document by id including ``_version`` in the result dict.
+
+        Args:
+            table: Table name.
+            _id: Row id to fetch.
+
+        Returns:
+            dict | None: Decoded document with ``_id`` and ``_version`` keys, or None.
+        """
+        self._ensure_versioned_table(table)
+        cur = self.adapter.execute(
+            f"SELECT _id, data, _version FROM {table} WHERE _id = ?;", [_id]
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        obj = json.loads(row[1])
+        obj["_id"] = row[0]
+        obj["_version"] = row[2]
+        return obj

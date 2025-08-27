@@ -73,6 +73,45 @@ u.delete()
 db.close()
 ```
 
+### Safe Model (Optimistic Locking)
+
+Use `SQLerSafeModel` for opt‑in concurrency safety. New rows start with `_version = 0`. Updates require the current `_version` and atomically bump it on success; stale updates raise `StaleVersionError`.
+
+```python
+from sqler import SQLerDB, SQLerSafeModel, StaleVersionError
+
+class Account(SQLerSafeModel):
+    owner: str
+    balance: int
+
+db = SQLerDB.on_disk("bank.db")
+Account.set_db(db)  # adds a `_version` column if missing
+
+acc = Account(owner="Ada", balance=100)
+acc.save()                 # _version == 0
+
+# Normal update → bumps version
+acc.balance = 120
+acc.save()                 # _version == 1
+
+# Stale update example
+try:
+    db.adapter.execute(
+        "UPDATE accounts SET _version = _version + 1 WHERE _id = ?;", [acc._id]
+    )
+    db.adapter.commit()
+    acc.balance = 130
+    acc.save()             # raises StaleVersionError
+except StaleVersionError:
+    acc.refresh()          # reload data + _version
+
+db.close()
+```
+
+Notes:
+- `query()/filter()/order_by()/limit()` work the same for `SQLerSafeModel` as for `SQLerModel`.
+- Query results don’t include `_version`; call `.refresh()` on an instance if you need the latest version.
+
 ### Model Indexes & Table Naming
 
 Models persist into a default table name derived from the class: lowercase plural of the class name (e.g., `User` → `users`). You can override this in `set_db`.
@@ -103,6 +142,13 @@ User.add_index(
 # Note: Fields starting with '_' are treated as literal columns (e.g., "_id").
 # For normal model fields, you can just pass the JSON path like "meta.level".
 ```
+
+### Index Guidance
+
+- Index fields you frequently filter/sort on, especially JSON paths used in `filter(...)` and `order_by(...)`.
+- For arrays queried via `contains()/isin()` or `.any()`, consider indexing the scalar field you compare on (e.g., `items[].sku` → index `items.sku`).
+- Safe models add a `_version` column; you normally don’t index it unless you query by version.
+- Use conditional (partial) indices with `where=` to keep indices small and effective.
 
 ### Querying
 
