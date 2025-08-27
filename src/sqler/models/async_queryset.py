@@ -14,6 +14,12 @@ class AsyncSQLerQuerySet(Generic[T]):
     def __init__(self, model_cls: Type[T], query: AsyncSQLerQuery) -> None:
         self._model_cls = model_cls
         self._query = query
+        self._resolve = True
+
+    def resolve(self, flag: bool) -> "AsyncSQLerQuerySet[T]":
+        clone = self.__class__(self._model_cls, self._query)
+        clone._resolve = flag
+        return clone
 
     # chaining
     def filter(self, expression: SQLerExpression) -> "AsyncSQLerQuerySet[T]":
@@ -33,11 +39,12 @@ class AsyncSQLerQuerySet(Generic[T]):
         docs = await self._query.all_dicts()
         results: list[T] = []
         for d in docs:
-            try:
-                aresolver = getattr(self._model_cls, "_aresolve_relations")
-                d = await aresolver(d)  # type: ignore[assignment]
-            except Exception:
-                pass
+            if self._resolve:
+                try:
+                    aresolver = getattr(self._model_cls, "_aresolve_relations")
+                    d = await aresolver(d)  # type: ignore[assignment]
+                except Exception:
+                    pass
             inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
             try:
                 inst._id = d.get("_id")  # type: ignore[attr-defined]
@@ -50,11 +57,12 @@ class AsyncSQLerQuerySet(Generic[T]):
         d = await self._query.first_dict()
         if d is None:
             return None
-        try:
-            aresolver = getattr(self._model_cls, "_aresolve_relations")
-            d = await aresolver(d)  # type: ignore[assignment]
-        except Exception:
-            pass
+        if self._resolve:
+            try:
+                aresolver = getattr(self._model_cls, "_aresolve_relations")
+                d = await aresolver(d)  # type: ignore[assignment]
+            except Exception:
+                pass
         inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
         try:
             inst._id = d.get("_id")  # type: ignore[attr-defined]

@@ -32,9 +32,30 @@ def test_relationship_join_exists_query():
     # combine with other predicates
     res2 = (
         User.query()
-        .filter(MF(User, ["address", "city"]) == "Osaka")
+        .filter(User.ref("address").field("city") == "Osaka")
         .exclude(F("name").like("C%"))
         .all()
     )
     assert [u.name for u in res2] == ["Bob"]
 
+    # join + any() over list of refs: model sugar
+    class Order(SQLerModel):
+        total: int
+
+    Order.set_db(db)
+    # extend User to include orders list via direct payload manipulation for test brevity
+    o1 = Order(total=50).save()
+    o2 = Order(total=150).save()
+    # attach [o1,o2] to Alice
+    alice = User.query().filter(F("name") == "Alice").first()
+    alice_dict = db.find_document("users", alice._id)
+    alice_dict["orders"] = [{"_table": "orders", "_id": o1._id}, {"_table": "orders", "_id": o2._id}]
+    db.upsert_document("users", alice._id, {k: v for k, v in alice_dict.items() if k != "_id"})
+
+    rich = (
+        User.query()
+        .filter(User.ref("orders").any().field("total") > 100)
+        .order_by("name")
+        .all()
+    )
+    assert [u.name for u in rich] == ["Alice"]

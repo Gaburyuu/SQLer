@@ -13,3 +13,7 @@ def register(table: str, cls: type) -> None:
 def resolve(table: str) -> Optional[type]:
     return _REGISTRY.get(table)
 
+
+def tables() -> Dict[str, type]:
+    """Return a copy of the table->class registry."""
+    return dict(_REGISTRY)

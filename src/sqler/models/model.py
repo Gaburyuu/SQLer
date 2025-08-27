@@ -53,6 +53,32 @@ class SQLerModel(BaseModel):
         cls._db._ensure_table(cls._table)
         registry.register(cls._table, cls)
 
+    # ergonomic relation field builder
+    @classmethod
+    def ref(cls, name: str):
+        """Return a model-aware field builder for a related field name.
+
+        Usage: User.ref("address").field("city") == "Kyoto"
+        """
+        from .model_field import SQLerModelField
+
+        class _RefBuilder:
+            def __init__(self, model_cls, base: str):
+                self.model_cls = model_cls
+                self.path = [base]
+
+            def field(self, *parts: str) -> SQLerModelField:
+                return SQLerModelField(self.model_cls, self.path + list(parts))
+
+            def any(self) -> "_RefAnyBuilder":
+                return _RefAnyBuilder(self.model_cls, self.path)
+
+        class _RefAnyBuilder(_RefBuilder):
+            def field(self, *parts: str) -> SQLerModelField:
+                return SQLerModelField(self.model_cls, self.path + list(parts), array_any=True)
+
+        return _RefBuilder(cls, name)
+
     @classmethod
     def _require_binding(cls) -> tuple[SQLerDB, str]:
         """Return the bound DB and table or raise if unbound.
@@ -115,6 +141,11 @@ class SQLerModel(BaseModel):
         """
         db, table = cls._require_binding()
         db.create_index(table, field, unique=unique, name=name, where=where)
+
+    @classmethod
+    def ensure_index(cls, field: str, *, unique: bool = False, name: Optional[str] = None, where: Optional[str] = None) -> None:
+        """Ensure an index on a JSON path or literal column exists (idempotent)."""
+        cls.add_index(field, unique=unique, name=name, where=where)
 
     # ----- instance methods -----
     def save(self: TModel) -> TModel:
@@ -199,11 +230,14 @@ class SQLerModel(BaseModel):
     def _dump_with_relations(self) -> dict:
         def encode(value: object):
             from sqler.models.model import SQLerModel as _M
+            from sqler.models.ref import as_ref
 
             if isinstance(value, _M):
                 value.save()
-                table = value.__class__._table
-                return {"_table": table, "_id": value._id}
+                return as_ref(value)
+            # already a ref dict: validate minimally
+            if isinstance(value, dict) and "_table" in value and "_id" in value:
+                return {"_table": value["_table"], "_id": value["_id"]}
             if isinstance(value, list):
                 return [encode(v) for v in value]
             if isinstance(value, dict):

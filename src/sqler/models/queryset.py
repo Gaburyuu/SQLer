@@ -21,6 +21,13 @@ class SQLerQuerySet(Generic[T]):
     ) -> None:
         self._model_cls = model_cls
         self._query = query
+        self._resolve = True
+
+    def resolve(self, flag: bool) -> "SQLerQuerySet[T]":
+        """Toggle relation hydration on result materialization (default True)."""
+        clone = self.__class__(self._model_cls, self._query)
+        clone._resolve = flag
+        return clone
 
     # chaining returns new wrappers
     def filter(self, expression: SQLerExpression) -> "SQLerQuerySet[T]":
@@ -43,14 +50,13 @@ class SQLerQuerySet(Generic[T]):
     def all(self) -> list[T]:
         """Execute and return a list of model instances."""
         docs = self._query.all_dicts()
-        results: list[T] = []
-        for d in docs:
-            # resolve relationship references before validation
+        if self._resolve:
             try:
-                resolver = getattr(self._model_cls, "_resolve_relations")
-                d = resolver(d)  # type: ignore[assignment]
+                docs = self._batch_resolve(docs)
             except Exception:
                 pass
+        results: list[T] = []
+        for d in docs:
             inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
             # attach db id if present but excluded from schema
             try:
@@ -65,11 +71,11 @@ class SQLerQuerySet(Generic[T]):
         d = self._query.first_dict()
         if d is None:
             return None
-        try:
-            resolver = getattr(self._model_cls, "_resolve_relations")
-            d = resolver(d)  # type: ignore[assignment]
-        except Exception:
-            pass
+        if self._resolve:
+            try:
+                d = self._batch_resolve([d])[0]
+            except Exception:
+                pass
         inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
         try:
             inst._id = d.get("_id")  # type: ignore[attr-defined]
@@ -89,3 +95,51 @@ class SQLerQuerySet(Generic[T]):
     def params(self) -> list[Any]:
         """Return the underlying parameter list."""
         return self._query.params
+
+    # --- internal: batch resolve references to avoid N+1 ---
+    def _batch_resolve(self, docs: list[dict]) -> list[dict]:
+        # collect refs grouped by table
+        refs_by_table: dict[str, set[int]] = {}
+
+        def collect(value):
+            if isinstance(value, dict) and "_table" in value and "_id" in value:
+                refs_by_table.setdefault(value["_table"], set()).add(int(value["_id"]))
+            elif isinstance(value, dict):
+                for v in value.values():
+                    collect(v)
+            elif isinstance(value, list):
+                for v in value:
+                    collect(v)
+
+        for d in docs:
+            collect(d)
+
+        # fetch all refs per table
+        resolved: dict[tuple[str, int], dict] = {}
+        adapter = self._query._adapter  # type: ignore[attr-defined]
+        for table, ids in refs_by_table.items():
+            if not ids:
+                continue
+            placeholders = ",".join(["?"] * len(ids))
+            sql = f"SELECT _id, data FROM {table} WHERE _id IN ({placeholders})"
+            cur = adapter.execute(sql, list(ids))
+            rows = cur.fetchall()
+            for _id, data_json in rows:
+                import json
+
+                obj = json.loads(data_json)
+                obj["_id"] = _id
+                resolved[(table, int(_id))] = obj
+
+        # replace in-doc refs with fetched payloads
+        def replace(value):
+            if isinstance(value, dict) and "_table" in value and "_id" in value:
+                key = (value["_table"], int(value["_id"]))
+                return resolved.get(key, value)
+            if isinstance(value, dict):
+                return {k: replace(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [replace(v) for v in value]
+            return value
+
+        return [replace(d) for d in docs]
