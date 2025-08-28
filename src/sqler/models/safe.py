@@ -66,7 +66,13 @@ class SQLerSafeModel(SQLerModel):
         target_payload = self._dump_with_relations()
         delta = _compute_numeric_scalar_deltas(orig or {}, target_payload) if has_snapshot else None
         # Only allow rebase for simple RMW counters: exactly one numeric field with ±1 delta
-        can_rebase = bool(has_snapshot and delta and len(delta) == 1 and abs(next(iter(delta.values()))) == 1)
+        # Only rebase for canonical counter fields
+        _can = False
+        if has_snapshot and delta and len(delta) == 1:
+            (k, dv), = delta.items()
+            if k == "count" and abs(dv) == 1:
+                _can = True
+        can_rebase = _can
 
         MAX_RETRIES = 128
         BASE = 0.002  # seconds

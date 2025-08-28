@@ -15,6 +15,7 @@ class AsyncSQLerQuery:
         order: Optional[str] = None,
         desc: bool = False,
         limit: Optional[int] = None,
+        include_version: bool = False,
     ):
         self._table = table
         self._adapter = adapter
@@ -22,28 +23,40 @@ class AsyncSQLerQuery:
         self._order = order
         self._desc = desc
         self._limit = limit
+        self._include_version = include_version
 
     def filter(self, expression: SQLerExpression) -> Self:
         new_expression = expression if self._expression is None else (self._expression & expression)
         return self.__class__(
-            self._table, self._adapter, new_expression, self._order, self._desc, self._limit
+            self._table, self._adapter, new_expression, self._order, self._desc, self._limit, self._include_version
         )
 
     def exclude(self, expression: SQLerExpression) -> Self:
         not_expr = ~expression
         new_expression = not_expr if self._expression is None else (self._expression & not_expr)
         return self.__class__(
-            self._table, self._adapter, new_expression, self._order, self._desc, self._limit
+            self._table, self._adapter, new_expression, self._order, self._desc, self._limit, self._include_version
         )
 
     def order_by(self, field: str, desc: bool = False) -> Self:
         return self.__class__(
-            self._table, self._adapter, self._expression, field, desc, self._limit
+            self._table, self._adapter, self._expression, field, desc, self._limit, self._include_version
         )
 
     def limit(self, n: int) -> Self:
         return self.__class__(
-            self._table, self._adapter, self._expression, self._order, self._desc, n
+            self._table, self._adapter, self._expression, self._order, self._desc, n, self._include_version
+        )
+
+    def with_version(self) -> Self:
+        return self.__class__(
+            self._table,
+            self._adapter,
+            self._expression,
+            self._order,
+            self._desc,
+            self._limit,
+            True,
         )
 
     def _build_query(self, *, include_id: bool = False) -> tuple[str, list[Any]]:
@@ -54,7 +67,10 @@ class AsyncSQLerQuery:
                 " DESC" if self._desc else ""
             )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
-        select = "_id, data" if include_id else "data"
+        if include_id:
+            select = "_id, data" + (", _version" if self._include_version else "")
+        else:
+            select = "data"
         sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()
         sql = " ".join(sql.split())
         params = self._expression.params if self._expression else []
@@ -104,9 +120,16 @@ class AsyncSQLerQuery:
         rows = await cur.fetchall()
         await cur.close()
         docs: list[dict[str, Any]] = []
-        for _id, data_json in rows:
+        for row in rows:
+            try:
+                _id, data_json = row[0], row[1]
+                ver = row[2] if self._include_version and len(row) > 2 else None
+            except Exception:
+                continue
             obj = json.loads(data_json)
             obj["_id"] = _id
+            if ver is not None:
+                obj["_version"] = ver
             docs.append(obj)
         return docs
 
