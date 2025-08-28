@@ -1,20 +1,20 @@
 from typing import List, Optional
 
-from sqler.models import SQLerModel
+from sqler.models import SQLerSafeModel
 from sqler.models.ref import as_ref
 
 
-class Address(SQLerModel):
+class Address(SQLerSafeModel):
     city: str
     country: str
 
 
-class Order(SQLerModel):
+class Order(SQLerSafeModel):
     total: float
-    note: str
+    note: str = ""
 
 
-class User(SQLerModel):
+class User(SQLerSafeModel):
     name: str
     age: int
     # reference to Address and list of references to Orders
