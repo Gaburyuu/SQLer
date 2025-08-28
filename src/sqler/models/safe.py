@@ -65,6 +65,8 @@ class SQLerSafeModel(SQLerModel):
         orig = snap if has_snapshot else None
         target_payload = self._dump_with_relations()
         delta = _compute_numeric_scalar_deltas(orig or {}, target_payload) if has_snapshot else None
+        # Only allow rebase for simple RMW counters: exactly one numeric field with ±1 delta
+        can_rebase = bool(has_snapshot and delta and len(delta) == 1 and abs(next(iter(delta.values()))) == 1)
 
         MAX_RETRIES = 128
         BASE = 0.002  # seconds
@@ -86,8 +88,8 @@ class SQLerSafeModel(SQLerModel):
                     raise
                 # fallthrough to backoff
             except RuntimeError as e:
-                # Stale version: only rebase intent if we have a snapshot (RMW pattern)
-                if not has_snapshot:
+                # Stale version: only rebase intent for simple counter deltas
+                if not can_rebase:
                     raise StaleVersionError(str(e)) from e
                 if self._id is None:
                     raise StaleVersionError(str(e)) from e
@@ -116,6 +118,27 @@ class SQLerSafeModel(SQLerModel):
 
         raise StaleVersionError("save retries exhausted")
 
+    def refresh(self: TSafe) -> TSafe:  # type: ignore[override]
+        cls = self.__class__
+        db, table = cls._require_binding()
+        if self._id is None:
+            raise ValueError("Cannot refresh unsaved model (missing _id)")
+        doc = db.find_document_with_version(table, self._id)
+        if doc is None:
+            raise LookupError(f"Row {self._id} not found for refresh")
+        fresh = cls.model_validate(doc)  # type: ignore[call-arg]
+        for fname in self.__class__.model_fields:
+            if fname == "_id":
+                continue
+            setattr(self, fname, getattr(fresh, fname))
+        self._id = doc.get("_id")
+        self._version = doc.get("_version", 0)
+        try:
+            self._snapshot = {k: v for k, v in doc.items() if k not in {"_id", "_version"}}  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return self
+
 
 def _compute_numeric_scalar_deltas(orig: dict, target: dict) -> dict[str, int]:
     deltas: dict[str, int] = {}
@@ -139,19 +162,4 @@ def _apply_numeric_scalar_deltas(base: dict, delta: dict[str, int]) -> dict:
             out[k] = dv
     return out
 
-    def refresh(self: TSafe) -> TSafe:  # type: ignore[override]
-        cls = self.__class__
-        db, table = cls._require_binding()
-        if self._id is None:
-            raise ValueError("Cannot refresh unsaved model (missing _id)")
-        doc = db.find_document_with_version(table, self._id)
-        if doc is None:
-            raise LookupError(f"Row {self._id} not found for refresh")
-        fresh = cls.model_validate(doc)  # type: ignore[call-arg]
-        for fname in self.__class__.model_fields:
-            if fname == "_id":
-                continue
-            setattr(self, fname, getattr(fresh, fname))
-        self._id = doc.get("_id")
-        self._version = doc.get("_version", 0)
-        return self
+    
