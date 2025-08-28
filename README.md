@@ -340,6 +340,17 @@ q = db.query("orders").filter(F(["items"]).any()["qty"] > 3)
 print(q.all_dicts())  # returns the matching orders as dicts
 ```
 
+### Scoped Filtering with any().where(...)
+
+Filter within a specific array element scope using `where(...)` mid-chain:
+
+```python
+from sqler.query import SQLerField as F
+
+# Match rows where any read has note == 'good' and, for that read, any mass.val > 10
+expr = F(["reads"]).any().where(F(["note"]) == "good")["masses"].any()["val"] > 10
+```
+
 ### Return Types
 
 - `query.all()` and `query.first()` return raw JSON strings from SQLite.

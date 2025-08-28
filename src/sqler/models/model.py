@@ -9,7 +9,9 @@ from sqler.db.sqler_db import SQLerDB
 from sqler.models.queryset import SQLerQuerySet
 from sqler.query import SQLerExpression
 
-from . import BrokenRef, ReferentialIntegrityError
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from . import BrokenRef, ReferentialIntegrityError  # for type checking
 
 TModel = TypeVar("TModel", bound="SQLerModel")
 
@@ -200,7 +202,8 @@ class SQLerModel(BaseModel):
         # find referrers
         referrers = self._find_referrers(db, table, int(self._id))
         if on_delete == "restrict" and referrers:
-            raise ReferentialIntegrityError(
+            from . import ReferentialIntegrityError as _RefErr
+            raise _RefErr(
                 f"Cannot delete {table}:{self._id}; referenced by {len(referrers)} row(s)"
             )
         if on_delete == "set_null":
@@ -338,9 +341,10 @@ class SQLerModel(BaseModel):
 
     # ----- reference validation -----
     @classmethod
-    def validate_references(cls) -> list[BrokenRef]:
+    def validate_references(cls):
         db, _ = cls._require_binding()
-        broken: list[BrokenRef] = []
+        from . import BrokenRef as _BrokenRef
+        broken: list[_BrokenRef] = []
         import json
 
         for table in registry.tables().keys():
