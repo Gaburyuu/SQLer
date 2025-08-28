@@ -338,7 +338,7 @@ except StaleVersionError:
 ## エラー型
 
 - `StaleVersionError` — 楽観的チェックに失敗（HTTP 409 の相当）
-- `InvariantViolation` — 行の不変条件違反（例：NULL JSON）
+- `InvariantViolationError` — 行の不変条件違反（例：NULL JSON）
 - `NotConnectedError` — アダプタ未接続/クローズ
 - SQLite 例外（`sqlite3.*`）は適切な文脈で伝播
 

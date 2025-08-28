@@ -336,7 +336,7 @@ except StaleVersionError:
 ## Errors
 
 - `StaleVersionError` — optimistic check failed (HTTP 409)
-- `InvariantViolation` — malformed row invariant (e.g., NULL JSON)
+- `InvariantViolationError` — malformed row invariant (e.g., NULL JSON)
 - `NotConnectedError` — adapter closed / not connected
 - SQLite exceptions (`sqlite3.*`) bubble with context
 

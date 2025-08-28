@@ -61,15 +61,15 @@ class AsyncSQLerSafeModel(AsyncSQLerModel):
         # Only rebase for canonical counter fields
         _can = False
         if has_snapshot and delta and len(delta) == 1:
-            (k, dv), = delta.items()
+            ((k, dv),) = delta.items()
             if k == "count" and abs(dv) == 1:
                 _can = True
         can_rebase = _can
 
-        MAX_RETRIES = 64
-        BASE = 0.002
+        max_retries = 64
+        base = 0.002
 
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(max_retries):
             try:
                 new_id, new_version = await db.upsert_with_version(
                     table, self._id, target_payload, self._version
@@ -83,6 +83,7 @@ class AsyncSQLerSafeModel(AsyncSQLerModel):
                 return self
             except RuntimeError as e:
                 from .safe import StaleVersionError
+
                 if not can_rebase:
                     raise StaleVersionError(str(e)) from e
                 if self._id is None:
@@ -107,9 +108,10 @@ class AsyncSQLerSafeModel(AsyncSQLerModel):
                 if "locked" not in str(e).lower():
                     raise
             # backoff
-            await asyncio.sleep((BASE * (2 ** min(attempt, 10))) + (random.random() * 0.0005))
+            await asyncio.sleep((base * (2 ** min(attempt, 10))) + (random.random() * 0.0005))
 
         from .safe import StaleVersionError
+
         raise StaleVersionError("save retries exhausted")
 
     async def refresh(self: TASafe) -> TASafe:  # type: ignore[override]

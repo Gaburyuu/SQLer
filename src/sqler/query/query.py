@@ -16,7 +16,7 @@ class NoAdapterError(ConnectionError):
     pass
 
 
-class InvariantViolation(RuntimeError):
+class InvariantViolationError(RuntimeError):
     """Raised when reading rows that violate expected invariants (e.g., NULL JSON)."""
 
 
@@ -98,7 +98,13 @@ class SQLerQuery:
             SQLerQuery: New query instance.
         """
         return self.__class__(
-            self._table, self._adapter, self._expression, field, desc, self._limit, self._include_version
+            self._table,
+            self._adapter,
+            self._expression,
+            field,
+            desc,
+            self._limit,
+            self._include_version,
         )
 
     def limit(self, n: int) -> Self:
@@ -111,7 +117,13 @@ class SQLerQuery:
             SQLerQuery: New query instance.
         """
         return self.__class__(
-            self._table, self._adapter, self._expression, self._order, self._desc, n, self._include_version
+            self._table,
+            self._adapter,
+            self._expression,
+            self._order,
+            self._desc,
+            n,
+            self._include_version,
         )
 
     def with_version(self) -> Self:
@@ -126,7 +138,9 @@ class SQLerQuery:
             True,
         )
 
-    def _build_query(self, *, include_id: bool = False, include_version: bool = False) -> tuple[str, list[Any]]:
+    def _build_query(
+        self, *, include_id: bool = False, include_version: bool = False
+    ) -> tuple[str, list[Any]]:
         """Build the SELECT statement and parameters.
 
         Args:
@@ -144,7 +158,9 @@ class SQLerQuery:
             )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
         if include_id:
-            select = "_id, data" + (", _version" if (include_version or self._include_version) else "")
+            select = "_id, data" + (
+                ", _version" if (include_version or self._include_version) else ""
+            )
         else:
             select = "data"
         sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()
@@ -244,7 +260,7 @@ class SQLerQuery:
             except Exception:
                 continue
             if data_json is None:
-                raise InvariantViolation(f"Row {_id} in {self._table} has NULL data JSON")
+                raise InvariantViolationError(f"Row {_id} in {self._table} has NULL data JSON")
             obj = json.loads(data_json)
             obj["_id"] = _id
             if ver is not None:

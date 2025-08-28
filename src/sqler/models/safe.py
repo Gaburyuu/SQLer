@@ -69,15 +69,15 @@ class SQLerSafeModel(SQLerModel):
         # Only rebase for canonical counter fields
         _can = False
         if has_snapshot and delta and len(delta) == 1:
-            (k, dv), = delta.items()
+            ((k, dv),) = delta.items()
             if k == "count" and abs(dv) == 1:
                 _can = True
         can_rebase = _can
 
-        MAX_RETRIES = 128
-        BASE = 0.002  # seconds
+        max_retries = 128
+        base = 0.002  # seconds
 
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(max_retries):
             try:
                 new_id, new_version = db.upsert_with_version(
                     table, self._id, target_payload, self._version
@@ -119,7 +119,7 @@ class SQLerSafeModel(SQLerModel):
                     pass
 
             # Exponential backoff with jitter
-            sleep = (BASE * (2 ** min(attempt, 10))) + (random.random() * 0.0005)
+            sleep = (base * (2 ** min(attempt, 10))) + (random.random() * 0.0005)
             time.sleep(sleep)
 
         raise StaleVersionError("save retries exhausted")
@@ -167,5 +167,3 @@ def _apply_numeric_scalar_deltas(base: dict, delta: dict[str, int]) -> dict:
         else:
             out[k] = dv
     return out
-
-    

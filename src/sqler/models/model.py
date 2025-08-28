@@ -204,6 +204,7 @@ class SQLerModel(BaseModel):
         referrers = self._find_referrers(db, table, int(self._id))
         if on_delete == "restrict" and referrers:
             from . import ReferentialIntegrityError as _RefErr
+
             raise _RefErr(
                 f"Cannot delete {table}:{self._id}; referenced by {len(referrers)} row(s)"
             )
@@ -345,6 +346,7 @@ class SQLerModel(BaseModel):
     def validate_references(cls):
         db, _ = cls._require_binding()
         from . import BrokenRef as _BrokenRef
+
         broken: list[_BrokenRef] = []
         import json
 

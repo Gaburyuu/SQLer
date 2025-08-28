@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+FastAPI demo using SQLer safely from async routes (threadpool handoff).
+
+English: Lifespan startup/shutdown, ETag/If-Match, and WAL-friendly patterns.
+日本語: lifespan での起動/終了、ETag/If-Match、WAL に配慮した実装例。
+"""
+
 import os
 import time
 from contextlib import asynccontextmanager
@@ -29,6 +36,10 @@ from .schemas import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Initialize and cleanup the demo database.
+
+    日本語: デモ用 DB の初期化とクリーンアップを行います。
+    """
     init_db(os.getenv("SQLER_DB_PATH"))
     yield
     close_db()
@@ -52,6 +63,10 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
+    """Attach a simple process-time header to every response.
+
+    日本語: 各レスポンスに処理時間ヘッダーを付与します。
+    """
     start = time.perf_counter()
     resp: Response = await call_next(request)
     resp.headers["X-Process-Time"] = f"{(time.perf_counter() - start):.6f}s"
@@ -62,11 +77,19 @@ install_exception_handlers(app)
 
 
 def _etag(obj_id: int, version: int | None) -> str:
+    """Build a weak ETag from id and version.
+
+    日本語: id とバージョンから弱い ETag を生成します。
+    """
     v = 0 if version is None else int(version)
     return f'W/"{obj_id}-{v}"'
 
 
 async def _db_call(fn, *args, **kwargs):
+    """Run a blocking SQLer call in the threadpool.
+
+    日本語: ブロッキングな SQLer 処理をスレッドプールで実行します。
+    """
     return await run_in_threadpool(fn, *args, **kwargs)
 
 
@@ -77,26 +100,43 @@ router_orders = APIRouter(prefix="/orders", tags=["Orders"])
 
 @router_addresses.post("", response_model=AddressOut, status_code=status.HTTP_201_CREATED)
 async def create_address(payload: AddressCreate):
+    """Create an address document.
+
+    日本語: 住所ドキュメントを作成します。
+    """
     a = await _db_call(lambda: Address(**payload.model_dump()).save())
-    return AddressOut.model_validate(a.model_dump() | {"_id": a._id, "_version": getattr(a, "_version", 0)})
+    return AddressOut.model_validate(
+        a.model_dump() | {"_id": a._id, "_version": getattr(a, "_version", 0)}
+    )
 
 
 @router_addresses.get("/{address_id}", response_model=AddressOut)
 async def get_address(address_id: int, request: Request, response: Response):
+    """Get an address by id with ETag support (304 on If-None-Match).
+
+    日本語: ETag 対応で住所を取得します（If-None-Match が一致すれば 304）。
+    """
     a = await _db_call(lambda: Address.from_id(address_id))
     if not a:
         raise HTTPException(status_code=404, detail="address not found")
-    etag = _etag(a._id, getattr(a, "_version", 0))
+    etag = _etag(a._id, getattr(a, "_version", 0))  # ETag は id と _version 由来
     if request.headers.get("if-none-match") == etag:
         response.status_code = status.HTTP_304_NOT_MODIFIED
         response.headers["ETag"] = etag
         return Response(status_code=304)
     response.headers["ETag"] = etag
-    return AddressOut.model_validate(a.model_dump() | {"_id": a._id, "_version": getattr(a, "_version", 0)})
+    return AddressOut.model_validate(
+        a.model_dump() | {"_id": a._id, "_version": getattr(a, "_version", 0)}
+    )
 
 
 @router_users.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(payload: UserCreate):
+    """Create a user and optionally link an existing address.
+
+    日本語: ユーザを作成し、必要に応じて既存住所を関連付けます。
+    """
+
     def _create():
         u = User(**payload.model_dump(exclude={"address_id"}))
         if payload.address_id is not None:
@@ -106,12 +146,19 @@ async def create_user(payload: UserCreate):
             u.set_address(addr)
         u.save()
         return u
+
     u = await _db_call(_create)
-    return UserOut.model_validate(u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)})
+    return UserOut.model_validate(
+        u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)}
+    )
 
 
 @router_users.get("/{user_id}", response_model=UserOut)
 async def get_user(user_id: int, request: Request, response: Response):
+    """Get a user by id with ETag support.
+
+    日本語: ETag 対応でユーザを取得します。
+    """
     u = await _db_call(lambda: User.from_id(user_id))
     if not u:
         raise HTTPException(status_code=404, detail="user not found")
@@ -121,7 +168,9 @@ async def get_user(user_id: int, request: Request, response: Response):
         response.headers["ETag"] = etag
         return Response(status_code=304)
     response.headers["ETag"] = etag
-    return UserOut.model_validate(u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)})
+    return UserOut.model_validate(
+        u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)}
+    )
 
 
 @router_users.get("", response_model=list[UserOut])
@@ -131,6 +180,11 @@ async def list_users(
     q: Annotated[str | None, Query(description="substring match on name")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ):
+    """List users with filters and pagination.
+
+    日本語: フィルタ/ページング付きでユーザ一覧を返します。
+    """
+
     def _list():
         qs = User.query()
         if min_age is not None:
@@ -140,21 +194,31 @@ async def list_users(
         if q:
             qs = qs.filter(F("name").like(f"%{q}%"))
         return [
-            UserOut.model_validate(u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)})
+            UserOut.model_validate(
+                u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)}
+            )
             for u in qs.order_by("age").limit(limit).all()
         ]
+
     return await _db_call(_list)
 
 
 @router_users.patch("/{user_id}", response_model=UserOut)
 async def patch_user(user_id: int, patch: UserPatch, request: Request, response: Response):
+    """Apply a partial update with If-Match and optimistic locking.
+
+    日本語: If-Match と楽観的ロックで部分更新を適用します。
+    """
+
     def _patch():
         u = User.from_id(user_id)
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
-        current_etag = _etag(u._id, getattr(u, "_version", 0))
+        current_etag = _etag(u._id, getattr(u, "_version", 0))  # 現在の ETag を算出
         if (if_match := request.headers.get("if-match")) and if_match != current_etag:
-            raise HTTPException(status_code=412, detail="If-Match precondition failed")
+            raise HTTPException(
+                status_code=412, detail="If-Match precondition failed"
+            )  # 事前条件不一致
 
         data = patch.model_dump(exclude_unset=True)
         if "address_id" in data:
@@ -173,23 +237,36 @@ async def patch_user(user_id: int, patch: UserPatch, request: Request, response:
         try:
             u.save()
         except StaleVersionError:
-            raise HTTPException(status_code=409, detail="version conflict")
+            raise HTTPException(status_code=409, detail="version conflict")  # 同時更新競合
         return u
 
     u = await _db_call(_patch)
     etag = _etag(u._id, getattr(u, "_version", 0))
     response.headers["ETag"] = etag
-    return UserOut.model_validate(u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)})
+    return UserOut.model_validate(
+        u.model_dump() | {"_id": u._id, "_version": getattr(u, "_version", 0)}
+    )
 
 
 @router_orders.post("", response_model=OrderOut, status_code=status.HTTP_201_CREATED)
 async def create_order(payload: OrderCreate):
+    """Create an order document.
+
+    日本語: 注文ドキュメントを作成します。
+    """
     o = await _db_call(lambda: Order(**payload.model_dump()).save())
-    return OrderOut.model_validate(o.model_dump() | {"_id": o._id, "_version": getattr(o, "_version", 0)})
+    return OrderOut.model_validate(
+        o.model_dump() | {"_id": o._id, "_version": getattr(o, "_version", 0)}
+    )
 
 
 @router_users.post("/{user_id}/orders/{order_id}", response_model=OkOut)
 async def attach_order(user_id: int, order_id: int):
+    """Attach an existing order to a user.
+
+    日本語: 既存の注文をユーザに関連付けます。
+    """
+
     def _attach():
         u = User.from_id(user_id)
         o = Order.from_id(order_id)
@@ -198,6 +275,7 @@ async def attach_order(user_id: int, order_id: int):
         u.add_order(o)
         u.save()
         return {"ok": True}
+
     return await _db_call(_attach)
 
 

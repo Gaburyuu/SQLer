@@ -275,6 +275,7 @@ class SQLerDB:
         self._ensure_table(table)
         # fast path: check without lock
         import sqlite3 as _sqlite3
+
         cur = self.adapter.execute(f'PRAGMA table_info("{table}");')
         rows = cur.fetchall()
         cols = set()

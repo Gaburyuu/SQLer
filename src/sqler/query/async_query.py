@@ -28,24 +28,48 @@ class AsyncSQLerQuery:
     def filter(self, expression: SQLerExpression) -> Self:
         new_expression = expression if self._expression is None else (self._expression & expression)
         return self.__class__(
-            self._table, self._adapter, new_expression, self._order, self._desc, self._limit, self._include_version
+            self._table,
+            self._adapter,
+            new_expression,
+            self._order,
+            self._desc,
+            self._limit,
+            self._include_version,
         )
 
     def exclude(self, expression: SQLerExpression) -> Self:
         not_expr = ~expression
         new_expression = not_expr if self._expression is None else (self._expression & not_expr)
         return self.__class__(
-            self._table, self._adapter, new_expression, self._order, self._desc, self._limit, self._include_version
+            self._table,
+            self._adapter,
+            new_expression,
+            self._order,
+            self._desc,
+            self._limit,
+            self._include_version,
         )
 
     def order_by(self, field: str, desc: bool = False) -> Self:
         return self.__class__(
-            self._table, self._adapter, self._expression, field, desc, self._limit, self._include_version
+            self._table,
+            self._adapter,
+            self._expression,
+            field,
+            desc,
+            self._limit,
+            self._include_version,
         )
 
     def limit(self, n: int) -> Self:
         return self.__class__(
-            self._table, self._adapter, self._expression, self._order, self._desc, n, self._include_version
+            self._table,
+            self._adapter,
+            self._expression,
+            self._order,
+            self._desc,
+            n,
+            self._include_version,
         )
 
     def with_version(self) -> Self:
