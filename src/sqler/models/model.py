@@ -37,6 +37,8 @@ class SQLerModel(BaseModel):
 
     # internal id stored outside the JSON blob
     _id: Optional[int] = PrivateAttr(default=None)
+    # snapshot of last-loaded document (for merge strategies in perf mode)
+    _snapshot: Optional[dict] = PrivateAttr(default=None)
 
     # class-bound db + table metadata
     _db: ClassVar[Optional[SQLerDB]] = None

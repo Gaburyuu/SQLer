@@ -31,23 +31,31 @@ def array_db():
         db.close()
 
 
-def test_contains_vs_isin(array_db, benchmark):
+@pytest.mark.perf
+def test_contains(array_db, benchmark):
     tags = F("tags")
     q = SQLerQuery("arrs", array_db.adapter).filter(tags.contains(42))
 
     def _run():
         return len(q.all())
 
-    n1 = benchmark(_run)
+    n = benchmark(_run)
+    assert n > 0
+
+
+@pytest.mark.perf
+def test_isin(array_db, benchmark):
+    tags = F("tags")
     q2 = SQLerQuery("arrs", array_db.adapter).filter(tags.isin([17, 42]))
 
     def _run2():
         return len(q2.all())
 
     n2 = benchmark(_run2)
-    assert n1 > 0 and n2 > 0
+    assert n2 > 0
 
 
+@pytest.mark.perf
 def test_nested_any(array_db, benchmark):
     expr = F(["events"]).any()["val"] > 8
     q = SQLerQuery("arrs", array_db.adapter).filter(expr)

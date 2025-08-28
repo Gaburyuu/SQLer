@@ -1,4 +1,5 @@
 import json
+import threading
 from typing import Any, Optional
 
 from sqler.adapter import SQLiteAdapter
@@ -44,6 +45,10 @@ class SQLerDB:
     def __init__(self, adapter: SQLiteAdapter):
         self.adapter = adapter
         self.adapter.connect()
+        # serialize DDL operations (e.g., adding _version) across threads
+        self._ddl_lock = threading.RLock()
+        # cache of tables already ensured to be versioned
+        self._versioned_tables: set[str] = set()
 
     def _ensure_table(self, table: str) -> None:
         """Create the target table if it doesn't exist.
@@ -268,13 +273,45 @@ class SQLerDB:
             table: Table name.
         """
         self._ensure_table(table)
-        cur = self.adapter.execute(f"PRAGMA table_info({table});")
-        cols = [row[1] for row in cur.fetchall()]
-        if "_version" not in cols:
-            self.adapter.execute(
-                f"ALTER TABLE {table} ADD COLUMN _version INTEGER NOT NULL DEFAULT 0;"
-            )
-            self.adapter.commit()
+        # fast path: check without lock
+        import sqlite3 as _sqlite3
+        cur = self.adapter.execute(f'PRAGMA table_info("{table}");')
+        rows = cur.fetchall()
+        cols = set()
+        for row in rows:
+            try:
+                if isinstance(row, _sqlite3.Row):
+                    name = row["name"]
+                else:
+                    name = row[1]
+            except Exception:
+                continue
+            cols.add(name)
+        if "_version" in cols:
+            # mark cache and return
+            self._versioned_tables.add(table)
+            return
+        # serialize DDL; re-check inside lock
+        with self._ddl_lock:
+            cur = self.adapter.execute(f'PRAGMA table_info("{table}");')
+            rows = cur.fetchall()
+            cols = set()
+            for row in rows:
+                try:
+                    if isinstance(row, _sqlite3.Row):
+                        name = row["name"]
+                    else:
+                        name = row[1]
+                except Exception:
+                    continue
+                cols.add(name)
+            if "_version" not in cols:
+                self.adapter.execute(
+                    f'ALTER TABLE "{table}" ADD COLUMN "_version" INTEGER NOT NULL DEFAULT 0;'
+                )
+                self.adapter.commit()
+            # update cache regardless
+            self._versioned_tables.add(table)
 
     def upsert_with_version(
         self, table: str, _id: Optional[int], doc: dict[str, Any], expected_version: Optional[int]
@@ -298,7 +335,8 @@ class SQLerDB:
             ValueError: If updating with ``_id`` but ``expected_version`` is None.
             RuntimeError: On stale version conflicts (no rows updated).
         """
-        self._ensure_versioned_table(table)
+        if table not in self._versioned_tables:
+            self._ensure_versioned_table(table)
         payload = json.dumps(doc)
         if _id is None:
             cur = self.adapter.execute(

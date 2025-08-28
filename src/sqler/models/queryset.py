@@ -61,6 +61,11 @@ class SQLerQuerySet(Generic[T]):
             # attach db id if present but excluded from schema
             try:
                 inst._id = d.get("_id")  # type: ignore[attr-defined]
+                if "_version" in d:
+                    inst._version = d.get("_version")  # type: ignore[attr-defined]
+                # capture snapshot of loaded state (excluding private keys)
+                snap = {k: v for k, v in d.items() if k not in {"_id", "_version"}}
+                inst._snapshot = snap  # type: ignore[attr-defined]
             except Exception:
                 pass
             results.append(inst)
@@ -79,6 +84,10 @@ class SQLerQuerySet(Generic[T]):
         inst = self._model_cls.model_validate(d)  # type: ignore[attr-defined]
         try:
             inst._id = d.get("_id")  # type: ignore[attr-defined]
+            if "_version" in d:
+                inst._version = d.get("_version")  # type: ignore[attr-defined]
+            snap = {k: v for k, v in d.items() if k not in {"_id", "_version"}}
+            inst._snapshot = snap  # type: ignore[attr-defined]
         except Exception:
             pass
         return inst

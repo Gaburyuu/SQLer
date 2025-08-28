@@ -106,7 +106,7 @@ class SQLerQuery:
             self._table, self._adapter, self._expression, self._order, self._desc, n
         )
 
-    def _build_query(self, *, include_id: bool = False) -> tuple[str, list[Any]]:
+    def _build_query(self, *, include_id: bool = False, include_version: bool = False) -> tuple[str, list[Any]]:
         """Build the SELECT statement and parameters.
 
         Args:
@@ -123,7 +123,10 @@ class SQLerQuery:
                 " DESC" if self._desc else ""
             )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
-        select = "_id, data" if include_id else "data"
+        if include_id:
+            select = "_id, data" + (", _version" if include_version else "")
+        else:
+            select = "data"
         sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()
         sql = " ".join(sql.split())  # collapse double spaces
         params = self._expression.params if self._expression else []
@@ -210,13 +213,25 @@ class SQLerQuery:
             raise NoAdapterError("No adapter set for query")
         import json
 
-        sql, params = self._build_query(include_id=True)
+        import os
+        include_version = os.environ.get("SQLER_QUERY_INCLUDE_VERSION", "").lower() in {"1", "true", "yes"}
+        sql, params = self._build_query(include_id=True, include_version=include_version)
         cur = self._adapter.execute(sql, params)
         rows = cur.fetchall()
         docs: list[dict[str, Any]] = []
-        for _id, data_json in rows:
+        for row in rows:
+            try:
+                _id, data_json = row[0], row[1]
+                ver = row[2] if include_version and len(row) > 2 else None
+            except Exception:
+                continue
+            if data_json is None:
+                # Defensive: skip malformed rows; should not happen under normal ops
+                continue
             obj = json.loads(data_json)
             obj["_id"] = _id
+            if ver is not None:
+                obj["_version"] = ver
             docs.append(obj)
         return docs
 

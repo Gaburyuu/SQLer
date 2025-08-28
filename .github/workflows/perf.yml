@@ -1,0 +1,31 @@
+name: Perf Suite (scheduled)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pipx install uv
+      - name: Sync deps
+        run: uv sync --dev
+      - name: Run perf tests
+        run: uv run pytest -q -m perf
+      # Optional: upload benchmark JSON if present
+      - name: Upload benchmarks (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-artifacts
+          path: ./.benchmarks
+          if-no-files-found: ignore
+

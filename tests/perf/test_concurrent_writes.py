@@ -1,5 +1,6 @@
 import threading
 import time
+import pytest
 
 from sqler import SQLerDB
 from sqler.models import SQLerSafeModel, StaleVersionError
@@ -29,6 +30,7 @@ def _worker(increment_times, errors):
             errors.append("max_retries")
 
 
+@pytest.mark.perf
 def test_concurrent_increments(tmp_path):
     db = SQLerDB.on_disk(tmp_path / "wal.db")
     # ensure WAL

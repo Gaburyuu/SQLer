@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from typing import Any, Optional, Self
 
 from .abstract import AdapterABC, NotConnectedError
@@ -13,6 +14,7 @@ class SQLiteAdapter(AdapterABC):
         self.path = path
         self.connection: Optional[sqlite3.Connection] = None
         self.pragmas = pragmas
+        self._lock = threading.RLock()
 
     def connect(self) -> None:
         self.connection = sqlite3.connect(
@@ -20,6 +22,8 @@ class SQLiteAdapter(AdapterABC):
             uri=True,
             check_same_thread=False,
         )
+        # row access by name + safe concurrent reads of row columns
+        self.connection.row_factory = sqlite3.Row
 
         cursor = self.connection.cursor()
 
@@ -31,43 +35,51 @@ class SQLiteAdapter(AdapterABC):
 
     def close(self) -> None:
         if self.connection:
-            self.connection.close()
-            self.connection = None
+            with self._lock:
+                self.connection.close()
+                self.connection = None
 
     def execute(self, query: str, params: Optional[list[Any]] = None) -> sqlite3.Cursor:
         """Execute a SQL query with optional parameters and return cursor"""
         if not self.connection:
             raise NotConnectedError("Database not connected, call connect() first")
-        cursor = self.connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        return cursor
+        with self._lock:
+            cursor = self.connection.cursor()
+            if params is not None:
+                # normalize list → tuple to please sqlite API and avoid surprises
+                if isinstance(params, list):
+                    params = tuple(params)
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            return _LockedCursor(cursor, self._lock)
 
     def executemany(self, query: str, param_list: Optional[list[Any]]) -> sqlite3.Cursor:
         """Execute a param query multiple times with different parameter sets"""
         if not self.connection:
             raise NotConnectedError("Database not connected, call connect() first")
-        cursor = self.connection.cursor()
-        cursor.executemany(query, param_list)
-        self.commit()
-        return cursor
+        with self._lock:
+            cursor = self.connection.cursor()
+            cursor.executemany(query, param_list or [])
+            self.connection.commit()
+            return _LockedCursor(cursor, self._lock)
 
     def executescript(self, script: str) -> sqlite3.Cursor:
         """Execute multiple statements from a script in a single action"""
         if not self.connection:
             raise NotConnectedError("Database not connected, call connect() first")
-        cursor = self.connection.cursor()
-        cursor.executescript(script)
-        self.connection.commit()
-        return cursor
+        with self._lock:
+            cursor = self.connection.cursor()
+            cursor.executescript(script)
+            self.connection.commit()
+            return _LockedCursor(cursor, self._lock)
 
     def commit(self) -> None:
         """Commit the current transaction."""
         if not self.connection:
             raise NotConnectedError("Database not connected, call connect() first")
-        self.connection.commit()
+        with self._lock:
+            self.connection.commit()
 
     def __enter__(self):
         """Enter context manager; connect if not connected"""
@@ -77,10 +89,13 @@ class SQLiteAdapter(AdapterABC):
 
     def __exit__(self, exception_type, exception_value, exception_tracebak):
         """Exit context manager; commit or rollback depending on exceptions"""
-        if exception_type is None:
-            self.connection.commit()
-        else:
-            self.connection.rollback()
+        if not self.connection:
+            return
+        with self._lock:
+            if exception_type is None:
+                self.connection.commit()
+            else:
+                self.connection.rollback()
 
     ### factories
 
@@ -115,3 +130,46 @@ class SQLiteAdapter(AdapterABC):
             "PRAGMA temp_store = MEMORY",
         ]
         return cls(path, pragmas=pragmas)
+
+
+class _LockedCursor:
+    """Thread-safe wrapper around sqlite3.Cursor that acquires the adapter lock
+    for fetch and attribute access that reads cursor state.
+    """
+
+    def __init__(self, cursor: sqlite3.Cursor, lock: threading.RLock):
+        self._cursor = cursor
+        self._lock = lock
+
+    def fetchone(self):
+        with self._lock:
+            return self._cursor.fetchone()
+
+    def fetchall(self):
+        with self._lock:
+            return self._cursor.fetchall()
+
+    def fetchmany(self, size: int | None = None):
+        with self._lock:
+            if size is None:
+                return self._cursor.fetchmany()
+            return self._cursor.fetchmany(size)
+
+    @property
+    def rowcount(self):
+        with self._lock:
+            return self._cursor.rowcount
+
+    @property
+    def lastrowid(self):
+        with self._lock:
+            return self._cursor.lastrowid
+
+    def __iter__(self):
+        # Iteration under lock would serialize the whole generator; fetchall instead in code
+        with self._lock:
+            return iter(self._cursor.fetchall())
+
+    def __getattr__(self, name: str):
+        # Fallback for any other cursor attributes
+        return getattr(self._cursor, name)

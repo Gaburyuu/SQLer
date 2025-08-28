@@ -1,18 +1,9 @@
-import pytest
+# Perf tests are controlled via the `perf` marker (see pytest.ini).
+# Enable optimistic write retries under contention just for perf runs.
+import os
 
 
-def pytest_addoption(parser):
-    parser.addoption("--perf", action="store_true", help="run performance tests")
-
-
-from pathlib import Path
-
-
-def pytest_collection_modifyitems(config, items):
-    if getattr(config.option, "perf", False):
-        return
-    skip_perf = pytest.mark.skip(reason="add --perf to run performance tests")
-    for item in items:
-        parts = Path(str(item.fspath)).parts
-        if "perf" in parts:
-            item.add_marker(skip_perf)
+def pytest_configure(config):
+    os.environ["SQLER_RETRY_ON_STALE"] = "1"
+    os.environ["SQLER_QUERY_INCLUDE_VERSION"] = "1"
+    os.environ["SQLER_JIT_VERSION"] = "1"

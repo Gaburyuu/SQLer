@@ -34,6 +34,7 @@ def perf_db():
         db.close()
 
 
+@pytest.mark.perf
 def test_bulk_insert_50k(perf_db, benchmark):
     docs = [_doc(i) for i in range(50_000)]
 
@@ -43,6 +44,7 @@ def test_bulk_insert_50k(perf_db, benchmark):
     benchmark(_run)
 
 
+@pytest.mark.perf
 def test_heavy_filter_sort_limit(perf_db, benchmark):
     perf_db.bulk_upsert("perf", [_doc(i) for i in range(20_000)])
     perf_db.create_index("perf", "i")
