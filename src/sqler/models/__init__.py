@@ -22,6 +22,7 @@ class BrokenRef:
     target_table: str
     target_id: int
 
+
 __all__ = [
     "SQLerModel",
     "SQLerQuerySet",

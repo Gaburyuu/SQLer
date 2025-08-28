@@ -317,7 +317,9 @@ class SQLerDB:
         if getattr(cur, "rowcount", None) in (0, None):
             # sqlite3 cursor.rowcount may be -1, treat non-positive as conflict
             # double-check via select
-            _ = self.adapter.execute(f"SELECT _version FROM {table} WHERE _id = ?;", [_id]).fetchone()
+            _ = self.adapter.execute(
+                f"SELECT _version FROM {table} WHERE _id = ?;", [_id]
+            ).fetchone()
             raise RuntimeError("Stale version: update rejected")
         return _id, expected_version + 1
 
