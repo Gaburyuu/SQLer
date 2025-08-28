@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+from typing import Optional
+
+from sqler import SQLerDB
+
+from .models import Address, Order, User
+
 """
 DB bootstrap utilities for the FastAPI example.
 
 English: Create/close a process-wide SQLerDB and bind models.
 日本語: プロセス全体で共有する SQLerDB を生成/破棄し、モデルをバインドします。
 """
-
-from typing import Optional
-
-from sqler import SQLerDB
-
-from .models import Address, Order, User
 
 _db: Optional[SQLerDB] = None
 

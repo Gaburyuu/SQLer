@@ -9,6 +9,7 @@ class Address(SQLerSafeModel):
 
     日本語: 楽観的バージョン管理付きの住所モデル（JSON 保持）。
     """
+
     city: str
     country: str
 
@@ -18,6 +19,7 @@ class Order(SQLerSafeModel):
 
     日本語: 合計金額とメモを持つ注文モデル。
     """
+
     total: float
     note: str = ""
 
@@ -27,6 +29,7 @@ class User(SQLerSafeModel):
 
     日本語: 参照辞書で Address/Order を関連付けるユーザモデル。
     """
+
     name: str
     age: int
     # reference to Address and list of references to Orders

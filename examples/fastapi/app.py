@@ -1,12 +1,5 @@
 from __future__ import annotations
 
-"""
-FastAPI demo using SQLer safely from async routes (threadpool handoff).
-
-English: Lifespan startup/shutdown, ETag/If-Match, and WAL-friendly patterns.
-日本語: lifespan での起動/終了、ETag/If-Match、WAL に配慮した実装例。
-"""
-
 import os
 import time
 from contextlib import asynccontextmanager
@@ -32,6 +25,13 @@ from .schemas import (
     UserOut,
     UserPatch,
 )
+
+"""
+FastAPI demo using SQLer safely from async routes (threadpool handoff).
+
+English: Lifespan startup/shutdown, ETag/If-Match, and WAL-friendly patterns.
+日本語: lifespan での起動/終了、ETag/If-Match、WAL に配慮した実装例。
+"""
 
 
 @asynccontextmanager
