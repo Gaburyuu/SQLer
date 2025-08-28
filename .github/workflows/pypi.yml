@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # <-- REQUIRED for PyPI Trusted Publishing (OIDC)
+  id-token: write
 
 jobs:
   build-and-publish:
@@ -32,10 +32,3 @@ jobs:
 
       - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Optional flags:
-          # verbose: true
-          # print-hash: true
-          # repository-url: https://test.pypi.org/legacy/   # use only if publishing to TestPyPI
-          # skip-existing: true
-          # packages-dir defaults to dist/

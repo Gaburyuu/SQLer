@@ -3,8 +3,8 @@ name: Perf
 on:
   workflow_dispatch:
   schedule:
-    # Daily at 05:00 UTC (14:00 JST); adjust as you like
-    - cron: "0 5 * * *"
+    # Monthly at 05:00 UTC (14:00 JST) on the first day of the month idk if this is necessary
+    - cron: "0 5 1 * *"
 
 concurrency:
   group: perf-${{ github.ref }}
