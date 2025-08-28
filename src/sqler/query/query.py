@@ -16,6 +16,10 @@ class NoAdapterError(ConnectionError):
     pass
 
 
+class InvariantViolation(RuntimeError):
+    """Raised when reading rows that violate expected invariants (e.g., NULL JSON)."""
+
+
 class SQLerQuery:
     """Build and execute chainable queries against a table.
 
@@ -32,6 +36,7 @@ class SQLerQuery:
         order: Optional[str] = None,
         desc: bool = False,
         limit: Optional[int] = None,
+        include_version: bool = False,
     ):
         self._table = table
         self._adapter = adapter
@@ -39,6 +44,7 @@ class SQLerQuery:
         self._order = order
         self._desc = desc
         self._limit = limit
+        self._include_version = include_version
 
     def filter(self, expression: SQLerExpression) -> Self:
         """Return a new query with the expression AND-ed in.
@@ -57,6 +63,7 @@ class SQLerQuery:
             self._order,
             self._desc,
             self._limit,
+            self._include_version,
         )
 
     def exclude(self, expression: SQLerExpression) -> Self:
@@ -77,6 +84,7 @@ class SQLerQuery:
             self._order,
             self._desc,
             self._limit,
+            self._include_version,
         )
 
     def order_by(self, field: str, desc: bool = False) -> Self:
@@ -90,7 +98,7 @@ class SQLerQuery:
             SQLerQuery: New query instance.
         """
         return self.__class__(
-            self._table, self._adapter, self._expression, field, desc, self._limit
+            self._table, self._adapter, self._expression, field, desc, self._limit, self._include_version
         )
 
     def limit(self, n: int) -> Self:
@@ -103,7 +111,19 @@ class SQLerQuery:
             SQLerQuery: New query instance.
         """
         return self.__class__(
-            self._table, self._adapter, self._expression, self._order, self._desc, n
+            self._table, self._adapter, self._expression, self._order, self._desc, n, self._include_version
+        )
+
+    def with_version(self) -> Self:
+        """Return a new query that includes `_version` column in results."""
+        return self.__class__(
+            self._table,
+            self._adapter,
+            self._expression,
+            self._order,
+            self._desc,
+            self._limit,
+            True,
         )
 
     def _build_query(self, *, include_id: bool = False, include_version: bool = False) -> tuple[str, list[Any]]:
@@ -124,7 +144,7 @@ class SQLerQuery:
             )
         limit = f"LIMIT {self._limit}" if self._limit is not None else ""
         if include_id:
-            select = "_id, data" + (", _version" if include_version else "")
+            select = "_id, data" + (", _version" if (include_version or self._include_version) else "")
         else:
             select = "data"
         sql = f"SELECT {select} FROM {self._table} {where} {order} {limit}".strip()
@@ -213,21 +233,18 @@ class SQLerQuery:
             raise NoAdapterError("No adapter set for query")
         import json
 
-        import os
-        include_version = os.environ.get("SQLER_QUERY_INCLUDE_VERSION", "").lower() in {"1", "true", "yes"}
-        sql, params = self._build_query(include_id=True, include_version=include_version)
+        sql, params = self._build_query(include_id=True, include_version=False)
         cur = self._adapter.execute(sql, params)
         rows = cur.fetchall()
         docs: list[dict[str, Any]] = []
         for row in rows:
             try:
                 _id, data_json = row[0], row[1]
-                ver = row[2] if include_version and len(row) > 2 else None
+                ver = row[2] if self._include_version and len(row) > 2 else None
             except Exception:
                 continue
             if data_json is None:
-                # Defensive: skip malformed rows; should not happen under normal ops
-                continue
+                raise InvariantViolation(f"Row {_id} in {self._table} has NULL data JSON")
             obj = json.loads(data_json)
             obj["_id"] = _id
             if ver is not None:

@@ -347,13 +347,20 @@ class SQLerDB:
             return cur.lastrowid, 0
         if expected_version is None:
             raise ValueError("expected_version required for update")
+        # Acquire write lock early to reduce live-lock under contention
+        try:
+            self.adapter.execute("BEGIN IMMEDIATE;")
+        except Exception:
+            # tolerate if already in a transaction
+            pass
         cur = self.adapter.execute(
             f"UPDATE {table} SET data = json(?), _version = _version + 1 WHERE _id = ? AND _version = ?;",
             [payload, _id, expected_version],
         )
         self.adapter.commit()
-        if getattr(cur, "rowcount", None) in (0, None):
-            # sqlite3 cursor.rowcount may be -1, treat non-positive as conflict
+        rc = getattr(cur, "rowcount", -1)
+        if rc <= 0:
+            # treat non-positive as conflict
             # double-check via select
             _ = self.adapter.execute(
                 f"SELECT _version FROM {table} WHERE _id = ?;", [_id]
@@ -376,7 +383,13 @@ class SQLerDB:
         row = cur.fetchone()
         if not row:
             return None
-        obj = json.loads(row[1])
-        obj["_id"] = row[0]
-        obj["_version"] = row[2]
+        try:
+            # Prefer name-based access for stability
+            obj = json.loads(row["data"])  # type: ignore[index]
+            obj["_id"] = row["_id"]  # type: ignore[index]
+            obj["_version"] = row["_version"]  # type: ignore[index]
+        except Exception:
+            obj = json.loads(row[1])
+            obj["_id"] = row[0]
+            obj["_version"] = row[2]
         return obj

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Type, TypeVar
 import time
 import sqlite3
+import random
 
 from pydantic import PrivateAttr
 
@@ -49,94 +50,94 @@ class SQLerSafeModel(SQLerModel):
 
     @classmethod
     def query(cls: Type[TSafe]) -> SQLerQuerySet[TSafe]:  # type: ignore[override]
-        qs = super().query()  # base queryset
-        # For perf runs, include _version when materializing
-        import os
-        if os.environ.get("SQLER_QUERY_INCLUDE_VERSION", "").lower() in {"1", "true", "yes"}:
-            return _SafeSQLerQuerySet(cls, qs._query)  # type: ignore[arg-type]
-        return qs  # type: ignore[return-value]
-
-
-class _SafeSQLerQuerySet(SQLerQuerySet[TSafe]):
-    def first(self) -> Optional[TSafe]:  # type: ignore[override]
-        inst = super().first()
-        if inst is None:
-            return None
-        # Rehydrate with version for correctness under contention
-        cls = self._model_cls  # type: ignore[attr-defined]
-        try:
-            fresh = cls.from_id(inst._id)  # type: ignore[attr-defined]
-            return fresh if fresh is not None else inst
-        except Exception:
-            return inst
+        db, table = cls._require_binding()
+        q = db.query(table).with_version()
+        return SQLerQuerySet[TSafe](cls, q)
 
     def save(self: TSafe) -> TSafe:  # type: ignore[override]
-        """Insert or update with optimistic locking.
-
-        Raises:
-            StaleVersionError: On version mismatch during update.
-        """
+        """Insert or update with optimistic locking and intent rebasing."""
         cls = self.__class__
         db, table = cls._require_binding()
-        payload = self._dump_with_relations()
-        # Optional JIT version fetch for perf/concurrency stress mode
-        import os as _os
-        if self._id is not None and _os.environ.get("SQLER_JIT_VERSION", "").lower() in {"1", "true", "yes"}:
-            latest0 = cls.from_id(self._id)
-            if latest0 is not None:
-                self._version = latest0._version
-        # small retry loop for hot contention and transient locks
-        max_retries = 128
-        for attempt in range(max_retries):
+
+        # Capture initial intent as numeric scalar deltas from snapshot → target
+        snap = getattr(self, "_snapshot", None)
+        has_snapshot = isinstance(snap, dict) and len(snap) > 0
+        orig = snap if has_snapshot else None
+        target_payload = self._dump_with_relations()
+        delta = _compute_numeric_scalar_deltas(orig or {}, target_payload) if has_snapshot else None
+
+        MAX_RETRIES = 128
+        BASE = 0.002  # seconds
+
+        for attempt in range(MAX_RETRIES):
             try:
                 new_id, new_version = db.upsert_with_version(
-                    table, self._id, payload, self._version
+                    table, self._id, target_payload, self._version
                 )
                 self._id = new_id
                 self._version = new_version
+                try:
+                    self._snapshot = {k: v for k, v in target_payload.items()}  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 return self
             except sqlite3.OperationalError as e:
-                if "locked" in str(e).lower():
-                    time.sleep(0.005 * (attempt + 1))
-                    continue
-                raise
+                if "locked" not in str(e).lower():
+                    raise
+                # fallthrough to backoff
             except RuntimeError as e:
-                # Stale version conflict
-                import os as _os
-                if _os.environ.get("SQLER_RETRY_ON_STALE", "").lower() in {"1", "true", "yes"}:
-                    latest = cls.from_id(self._id) if self._id is not None else None
-                    if latest is None:
-                        from .safe import StaleVersionError as _SVE
-                        raise _SVE(str(e)) from e
-                    # best-effort merge for numeric deltas based on snapshot
-                    try:
-                        base = getattr(self, "_snapshot", None)
-                        if isinstance(base, dict):
-                            for key, self_val in list(self.__dict__.items()):
-                                if key.startswith("_"):
-                                    continue
-                                base_val = base.get(key)
-                                latest_val = getattr(latest, key, None)
-                                if isinstance(self_val, int) and isinstance(base_val, int) and isinstance(latest_val, int):
-                                    delta = self_val - base_val
-                                    setattr(self, key, latest_val + delta)
-                    except Exception:
-                        pass
-                    self._version = latest._version
-                    time.sleep(0.001 * (attempt + 1))
-                    # recompute payload with merged value and retry
-                    payload = self._dump_with_relations()
-                    # update snapshot to latest for subsequent merges
-                    try:
-                        self._snapshot = latest.model_dump()  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-                    continue
-                # surface to caller to re-fetch and retry
-                from .safe import StaleVersionError as _SVE  # local alias
-                raise _SVE(str(e)) from e
-        # exhausted
+                # Stale version: only rebase intent if we have a snapshot (RMW pattern)
+                if not has_snapshot:
+                    raise StaleVersionError(str(e)) from e
+                if self._id is None:
+                    raise StaleVersionError(str(e)) from e
+                latest = cls.from_id(self._id)
+                if latest is None:
+                    raise StaleVersionError(str(e)) from e
+                latest_payload = latest._dump_with_relations()
+                rebased = {**latest_payload}
+                # Apply our non-numeric desired fields from current target
+                for k, v in target_payload.items():
+                    if delta is None or k not in delta:
+                        rebased[k] = v
+                # Apply numeric deltas on top
+                if delta is not None:
+                    rebased = _apply_numeric_scalar_deltas(rebased, delta)
+                target_payload = rebased
+                self._version = getattr(latest, "_version", 0)
+                try:
+                    self._snapshot = {k: v for k, v in latest_payload.items()}  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            # Exponential backoff with jitter
+            sleep = (BASE * (2 ** min(attempt, 10))) + (random.random() * 0.0005)
+            time.sleep(sleep)
+
         raise StaleVersionError("save retries exhausted")
+
+
+def _compute_numeric_scalar_deltas(orig: dict, target: dict) -> dict[str, int]:
+    deltas: dict[str, int] = {}
+    for k, v in target.items():
+        if isinstance(v, int):
+            base = orig.get(k, 0)
+            if isinstance(base, int):
+                dv = v - base
+                if dv != 0:
+                    deltas[k] = dv
+    return deltas
+
+
+def _apply_numeric_scalar_deltas(base: dict, delta: dict[str, int]) -> dict:
+    out = {**base}
+    for k, dv in delta.items():
+        cur = out.get(k, 0)
+        if isinstance(cur, int):
+            out[k] = cur + dv
+        else:
+            out[k] = dv
+    return out
 
     def refresh(self: TSafe) -> TSafe:  # type: ignore[override]
         cls = self.__class__
