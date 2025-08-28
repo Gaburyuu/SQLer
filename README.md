@@ -5,384 +5,74 @@
 [![Tests](https://github.com/gabu-quest/SQLer/actions/workflows/ci.yml/badge.svg)](https://github.com/gabu-quest/SQLer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**A simple, flexible, and powerful micro-ORM for storing and querying JSON documents in SQLite.**
+**A lightweight, JSON-first micro-ORM for SQLite (sync + async).**
+Define Pydantic-style models, persist them as JSON, and query with a fluent API — with optional _safe models_ that enforce optimistic versioning.
 
-SQLer is a Python library that provides a simple and intuitive way to work with JSON data in a SQLite database. It's designed to be a lightweight alternative to full-fledged ORMs, offering a balance of power and simplicity. It is heavily inspired by TinyDB and other similar document databases.
+---
+
+## Why SQLer?
+
+This started as a personal toolkit for **very fast prototyping** — small scripts that made it effortless to sketch data models, shove them into SQLite as JSON, and iterate. The result became SQLer: a tidy, dependency-light package that keeps that prototyping speed, but adds the pieces you need for real projects (indexes, relationships, integrity policies, and honest concurrency).
+
+---
 
 ## Features
 
-- **Pydantic-like Model Persistence:** Store and retrieve Pydantic-like models (or any dictionary) as JSON documents.
-- **Automatic Table Creation:** Tables are created automatically when you first insert a document.
-- **Flexible Querying:** Build complex queries using a fluent API with `SQLerField` and `SQLerQuery`.
-- **JSON Field Indexing:** Create indexes on JSON fields for faster queries.
-- **In-Memory and On-Disk Databases:** Use an in-memory database for testing or an on-disk database for persistence.
-- **Context Manager Support:** The `SQLiteAdapter` can be used as a context manager to automatically handle connections and transactions.
+- **Document-style models** backed by SQLite JSON1
+- **Fluent query builder**: `filter`, `exclude`, `contains`, `isin`, `.any().where(...)`
+- **Relationships** with simple reference storage and hydration
+- **Safe models** with `_version` and optimistic locking (stale writes raise)
+- **Bulk operations** (`bulk_upsert`)
+- **Integrity policies** on delete: `restrict`, `set_null`, `cascade`
+- **Raw SQL escape hatch** (parameterized), with model hydration when returning `_id, data`
+- **Sync & Async** APIs with matching semantics
+- **WAL-friendly concurrency** via thread-local connections (many readers, one writer)
+- **Opt-in perf tests** and practical indexing guidance
 
-## Installation
+---
+
+## Install
 
 ```bash
 pip install sqler
 ```
 
-## Usage
+Requires Python **3.12+** and SQLite with JSON1 (bundled on most platforms).
 
-### Basic Usage
+---
 
-```python
-from sqler import SQLerDB
-
-# Create an in-memory database
-db = SQLerDB.in_memory()
-
-# Insert a document
-db.insert_document("users", {"name": "John Doe", "age": 30})
-
-# Find a document
-user = db.find_document("users", 1)
-print(user)
-
-# Close the connection
-db.close()
-```
-
-### Model Layer (Pydantic v2)
-
-Use `SQLerModel` to define models that persist as JSON documents, with convenience CRUD and query helpers returning model instances.
+## Quickstart (Sync)
 
 ```python
 from sqler import SQLerDB, SQLerModel
 from sqler.query import SQLerField as F
-
-class User(SQLerModel):
-    name: str
-    age: int
-
-db = SQLerDB.in_memory()
-User.set_db(db)  # binds the model to a table named "users"
-
-# Create and save
-u = User(name="Alice", age=30)
-u.save()
-print(u._id)
-
-# Query as models
-adults = User.query().filter(F("age") >= 18).order_by("age").all()
-print([a.name for a in adults])
-
-# Refresh and delete
-u.age = 31
-u.save()
-u.refresh()
-u.delete()
-
-db.close()
-```
-
-### Safe Model (Optimistic Locking)
-
-Use `SQLerSafeModel` for opt‑in concurrency safety. New rows start with `_version = 0`. Updates require the current `_version` and atomically bump it on success; stale updates raise `StaleVersionError`.
-
-```python
-from sqler import SQLerDB, SQLerSafeModel, StaleVersionError
-
-class Account(SQLerSafeModel):
-    owner: str
-    balance: int
-
-db = SQLerDB.on_disk("bank.db")
-Account.set_db(db)  # adds a `_version` column if missing
-
-acc = Account(owner="Ada", balance=100)
-acc.save()                 # _version == 0
-
-# Normal update → bumps version
-acc.balance = 120
-acc.save()                 # _version == 1
-
-# Stale update example
-try:
-    db.adapter.execute(
-        "UPDATE accounts SET _version = _version + 1 WHERE _id = ?;", [acc._id]
-    )
-    db.adapter.commit()
-    acc.balance = 130
-    acc.save()             # raises StaleVersionError
-except StaleVersionError:
-    acc.refresh()          # reload data + _version
-
-db.close()
-```
-
-Notes:
-- `query()/filter()/order_by()/limit()` work the same for `SQLerSafeModel` as for `SQLerModel`.
-- Query results don’t include `_version`; call `.refresh()` on an instance if you need the latest version.
-
-### Model Indexes & Table Naming
-
-Models persist into a default table name derived from the class: lowercase plural of the class name (e.g., `User` → `users`). You can override this in `set_db`.
-
-```python
-from sqler import SQLerDB, SQLerModel
 
 class User(SQLerModel):
     name: str
     age: int
 
 db = SQLerDB.on_disk("app.db")
+User.set_db(db)  # binds model to table "users" (override with table="...")
 
-# Default table name: "users"
-User.set_db(db)
+# Create / save
+u = User(name="Alice", age=30)
+u.save()
+print(u._id)  # assigned _id
 
-# Or override the table name
-# User.set_db(db, table="people")
-
-# Create indexes via the model
-User.add_index("age")                       # json_extract(data, '$.age')
-User.add_index("email", unique=True)        # unique JSON index
-User.add_index(
-    "meta.level",
-    where="json_extract(data, '$.meta.level') IS NOT NULL",
-)
-
-# Note: Fields starting with '_' are treated as literal columns (e.g., "_id").
-# For normal model fields, you can just pass the JSON path like "meta.level".
-```
-
-### Index Guidance
-
-- Index fields you frequently filter/sort on, especially JSON paths used in `filter(...)` and `order_by(...)`.
-- For arrays queried via `contains()/isin()` or `.any()`, consider indexing the scalar field you compare on (e.g., `items[].sku` → index `items.sku`).
-- Safe models add a `_version` column; you normally don’t index it unless you query by version.
-- Use conditional (partial) indices with `where=` to keep indices small and effective.
-
-### Relationships (Save/Load/Refresh)
-
-Models can reference other SQLerModels. When saving, related models are saved first and references are written as a small dict `{ "_table": ..., "_id": ... }`. On load/refresh, those references are resolved back into model instances.
-
-```python
-from sqler import SQLerDB, SQLerModel
-
-class Address(SQLerModel):
-    city: str
-    country: str
-
-class User(SQLerModel):
-    name: str
-    address: Address | None = None
-
-db = SQLerDB.in_memory()
-Address.set_db(db)
-User.set_db(db)
-
-home = Address(city="Kyoto", country="JP")
-u = User(name="Alice", address=home)
-u.save()  # ensures address is saved; user stores a reference
-
-loaded = User.from_id(u._id)
-print(loaded.address.city)  # "Kyoto"
-
-# update nested and refresh
-loaded.address.city = "Osaka"
-loaded.address.save()
-loaded.refresh()
-print(loaded.address.city)  # "Osaka"
-```
-
-Notes:
-- References work for nested structures and arrays of models.
-- Pydantic submodels (non‑SQLerModel) are inlined as JSON.
-- Async models support the same behavior with `await`able `save/from_id/refresh`.
-
-### Relationship Filtering
-
-- Model-aware sugar:
-  - `User.ref("address").field("city") == "Kyoto"`
-- Lower-level API:
-  - `from sqler.models import SQLerModelField as MF`
-  - `MF(User, ["address","city"]) == "Kyoto"`
-- Arrays of refs: `User.ref("orders").any().field("total") > 100`
-
-Hydration is on by default; use `.resolve(False)` on the queryset to skip relationship hydration.
-
-### Saving Refs
-
-- Assign models directly: `user.address = addr; addr.save(); user.save()`
-- Or use ref dicts: `from sqler.models import as_ref; user.address = as_ref(addr)`
-- Arrays of refs: `user.orders = [as_ref(o1), as_ref(o2)]`
-
-By design, parent `.save()` does not deep-save children; save related models explicitly.
-
-### Debugging & Explain
-
-- `qs.debug()` returns `(sql, params)`.
-- `qs.explain_query_plan(adapter)` returns raw rows from `EXPLAIN QUERY PLAN`.
-  Use it to compare plans before/after `ensure_index(...)`.
-
-### Indexes for Relations
-
-- Ensure indexes on ref keys and common JSON paths:
-  - `User.ensure_index("address._id")`
-  - `User.ensure_index("address.city")`
-  - `User.ensure_index("orders._id")`
-
-### Examples
-
-See the full cookbook in `docs/EXAMPLES.md`. To run an example:
-
-```
-uv run python examples/01_quickstart_sync.py
-```
-
-### Querying
-
-```python
-from sqler import SQLerDB
-from sqler.query import SQLerField
-
-# Create an on-disk database
-db = SQLerDB.on_disk("my_database.db")
-
-# Insert some documents
-db.insert_document("users", {"name": "John Doe", "age": 30, "city": "New York"})
-db.insert_document("users", {"name": "Jane Doe", "age": 25, "city": "London"})
-db.insert_document("users", {"name": "Peter Jones", "age": 35, "city": "New York"})
-
-# Create a query
-User = SQLerField
-query = db.query("users").filter(User("city") == "New York")
-
-# Get all users in New York (JSON strings)
-users_json = query.all()
-print(users_json)
-
-# Or get parsed dicts with `_id` attached
-users = query.all_dicts()
-print(users)
-
-# Get the first user in New York as a parsed dict
-user = query.first_dict()
-print(user)
-
-# Get the number of users in New York
-count = query.count()
-print(count)
-
-# Close the connection
-db.close()
-```
-
-### Advanced Querying
-
-```python
-from sqler import SQLerDB
-from sqler.query import SQLerField
-
-db = SQLerDB.in_memory()
-
-db.insert_document("products", {"name": "Laptop", "price": 1000, "tags": ["electronics", "computers"]})
-db.insert_document("products", {"name": "Mouse", "price": 50, "tags": ["electronics", "accessories"]})
-db.insert_document("products", {"name": "Keyboard", "price": 100, "tags": ["electronics", "accessories"]})
-
-# Find all products with a price greater than 100
-Product = SQLerField
-query = db.query("products").filter(Product("price") > 100)
-products = query.all()
-print(products)
-
-# Find all products that have the "electronics" tag
-query = db.query("products").filter(Product("tags").contains("electronics"))
-products = query.all()
-print(products)
-
-# Find all products with a price between 50 and 150
-query = db.query("products").filter((Product("price") >= 50) & (Product("price") <= 150))
-products = query.all()
-print(products)
+# Query
+adults = User.query().filter(F("age") >= 18).order_by("age").all()
+print([a.name for a in adults])
 
 db.close()
 ```
 
-### Indexes
+---
 
-```python
-from sqler import SQLerDB
-
-db = SQLerDB.on_disk("my_database.db")
-
-# Create an index on a JSON field for faster queries
-db.create_index("users", "city")  # -> uses json_extract(data, '$.city')
-
-# Unique/conditional index examples
-db.create_index("users", "email", unique=True)
-db.create_index("users", "age", where="json_extract(data, '$.age') IS NOT NULL")
-```
-
-### Arrays of Objects with .any()
-
-When you have arrays of objects, use `.any()` to filter within them efficiently (internally uses `json_each` joins):
-
-```python
-from sqler import SQLerDB
-from sqler.query import SQLerField as F
-
-db = SQLerDB.in_memory()
-
-db.insert_document("orders", {
-    "order_id": 1,
-    "items": [
-        {"sku": "A1", "qty": 2},
-        {"sku": "B2", "qty": 5},
-    ]
-})
-
-# Find orders where any item has qty > 3
-q = db.query("orders").filter(F(["items"]).any()["qty"] > 3)
-print(q.all_dicts())  # returns the matching orders as dicts
-```
-
-### Scoped Filtering with any().where(...)
-
-Filter within a specific array element scope using `where(...)` mid-chain:
-
-```python
-from sqler.query import SQLerField as F
-
-# Match rows where any read has note == 'good' and, for that read, any mass.val > 10
-expr = F(["reads"]).any().where(F(["note"]) == "good")["masses"].any()["val"] > 10
-```
-
-### Return Types
-
-- `query.all()` and `query.first()` return raw JSON strings from SQLite.
-- Use `query.all_dicts()` and `query.first_dict()` to get parsed Python dicts with `_id` included.
-
-This split lets you choose zero-copy raw reads (strings) or convenient parsed objects.
-
-### Testing
-
-Run the test suite with uv:
-
-```
-uv run -q pytest -q
-```
-
-### Contributing & Style
-
-- Read the contributing guide: see `CONTRIBUTING.md`.
-- Full style guide: see `STYLE_GUIDE.md`.
-- Format and lint:
-  - `uv run ruff format .`
-  - `uv run ruff check .`
-- Run tests with coverage (optional gate):
-  - `uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90`
-
-### Async Quickstart
-
-Use the async adapter/DB/model for non-blocking workflows. The APIs mirror the sync counterparts.
+## Quickstart (Async)
 
 ```python
 import asyncio
-from sqler import AsyncSQLiteAdapter, AsyncSQLerDB, AsyncSQLerModel
+from sqler import AsyncSQLerDB, AsyncSQLerModel
 from sqler.query import SQLerField as F
 
 class AUser(AsyncSQLerModel):
@@ -405,61 +95,302 @@ async def main():
 asyncio.run(main())
 ```
 
-### Async Safe Model
+---
 
-`AsyncSQLerSafeModel` mirrors the safe model behavior with `await`able operations.
+## Safe Models & Optimistic Versioning
+
+Use `SQLerSafeModel` when you need concurrency safety. New rows start with `_version = 0`. Updates require the in-memory `_version`; on success it bumps by 1. If the row changed underneath you, a `StaleVersionError` is raised.
 
 ```python
-import asyncio
-from sqler import AsyncSQLerDB, AsyncSQLerSafeModel, StaleVersionError
+from sqler import SQLerDB, SQLerSafeModel, StaleVersionError
 
-class AAccount(AsyncSQLerSafeModel):
+class Account(SQLerSafeModel):
     owner: str
     balance: int
 
-async def main():
-    db = AsyncSQLerDB.in_memory()
-    await db.connect()
-    AAccount.set_db(db)
+db = SQLerDB.on_disk("bank.db")
+Account.set_db(db)
 
-    acc = AAccount(owner="Ada", balance=100)
-    await acc.save()           # _version == 0
+acc = Account(owner="Ada", balance=100)
+acc.save()                 # _version == 0
 
-    acc.balance = 120
-    await acc.save()           # _version == 1
+acc.balance = 120
+acc.save()                 # _version == 1
 
-    try:
-        # fake a concurrent bump
-        await db.adapter.execute(
-            "UPDATE aaccounts SET _version = _version + 1 WHERE _id = ?;",
-            [acc._id],
-        )
-        await db.adapter.commit()
-        await acc.save()       # raises StaleVersionError
-    except StaleVersionError:
-        await acc.refresh()
+# Simulate concurrent change
+db.adapter.execute("UPDATE accounts SET _version = _version + 1 WHERE _id = ?;", [acc._id])
+db.adapter.commit()
 
-    await db.close()
-
-asyncio.run(main())
+# This write is stale → raises
+try:
+    acc.balance = 130
+    acc.save()
+except StaleVersionError:
+    acc.refresh()          # reloads both fields and _version
 ```
 
-### Examples
+---
 
-Run these end-to-end examples locally:
+## Relationships
 
-- `examples/sync_model_quickstart.py`: basic model save/query.
-- `examples/sync_safe_model.py`: optimistic locking with `SQLerSafeModel`.
-- `examples/async_model_quickstart.py`: async model save/query.
-- `examples/async_safe_model.py`: async optimistic locking.
-- `examples/model_arrays_any.py`: arrays: `contains`, `isin`, and `.any()`.
+Store references to other models and hydrate them on load/refresh.
 
-Command examples:
+```python
+from sqler import SQLerDB, SQLerModel
 
+class Address(SQLerModel):
+    city: str
+    country: str
+
+class User(SQLerModel):
+    name: str
+    address: Address | None = None
+
+db = SQLerDB.in_memory()
+Address.set_db(db); User.set_db(db)
+
+home = Address(city="Kyoto", country="JP"); home.save()
+user = User(name="Alice", address=home);   user.save()
+
+u = User.from_id(user._id)
+print(u.address.city)  # "Kyoto"
 ```
+
+**Filtering by referenced fields**
+
+```python
+from sqler.query import SQLerField as F
+# Address city equals "Kyoto"
+q = User.query().filter(F(["address","city"]) == "Kyoto")
+```
+
+---
+
+## Query Builder
+
+- **Fields:** `F("age")`, `F(["items","qty"])`
+- **Predicates:** `==`, `!=`, `<`, `<=`, `>`, `>=`, `contains`, `isin`
+- **Boolean ops:** `&` (AND), `|` (OR), `~` (NOT)
+- **Exclude:** invert a predicate set
+- **Arrays:** `.any()` and scoped `.any().where(...)`
+
+```python
+from sqler.query import SQLerField as F
+
+# containments
+q1 = User.query().filter(F("tags").contains("pro"))
+
+# membership
+q2 = User.query().filter(F("tier").isin([1, 2]))
+
+# exclude
+q3 = User.query().exclude(F("name").like("test%")).order_by("name")
+
+# arrays of objects
+expr = F(["items"]).any().where((F("sku") == "ABC") & (F("qty") >= 2))
+q4 = Order.query().filter(expr)
+```
+
+**Debug & explain**
+
+```python
+sql, params = User.query().filter(F("age") >= 18).debug()
+plan = User.query().filter(F("age") >= 18).explain_query_plan(User.db().adapter)
+```
+
+---
+
+## Data Integrity
+
+### Delete Policies (`restrict`, `set_null`, `cascade`)
+
+Control how deletions affect JSON references in related rows.
+
+- `restrict` (default): prevent deletion if anything still references the row
+- `set_null`: null out the JSON field that holds the reference (field must be nullable)
+- `cascade`: recursively delete referrers (depth-first, cycle-safe)
+
+```python
+# Prevent delete if posts still reference the user
+user.delete_with_policy(on_delete="restrict")
+
+# Null-out JSON refs before deleting
+post.delete_with_policy(on_delete="set_null")
+user.delete_with_policy(on_delete="restrict")
+
+# Cascade example (pseudo)
+user.delete_with_policy(on_delete=("cascade", {"Post": "author"}))
+```
+
+### Reference Validation
+
+Detect orphans proactively:
+
+```python
+broken = Post.validate_references({"author": ("users", "id")})
+if broken:
+    for table, rid, ref in broken:
+        print("Broken ref:", table, rid, "→", ref)
+```
+
+---
+
+## Bulk Operations
+
+Write many documents efficiently.
+
+```python
+rows = [{"name": "A"}, {"name": "B"}, {"_id": 42, "name": "C"}]
+ids = db.bulk_upsert("users", rows)   # returns list of _ids in input order
+```
+
+Notes:
+
+- If SQLite supports `RETURNING`, SQLer uses it; otherwise a safe fallback is used.
+- For sustained heavy writes, favor a single-process writer (SQLite has a single writer at a time).
+
+---
+
+## Advanced Usage
+
+### Raw SQL (`execute_sql`)
+
+Run parameterized SQL. To hydrate models later, return `_id` and `data` columns.
+
+```python
+rows = db.execute_sql("""
+  SELECT u._id, u.data
+  FROM users u
+  WHERE json_extract(u.data,'$.name') LIKE ?
+""", ["A%"])
+```
+
+### Indexes (JSON paths)
+
+Build indexes for fields you filter/sort on.
+
+```python
+# DB-level
+db.create_index("users", "age")  # -> json_extract(data,'$.age')
+db.create_index("users", "email", unique=True)
+db.create_index("users", "age", where="json_extract(data,'$.age') IS NOT NULL")
+```
+
+For relationships, consider indexes on reference paths:
+
+```python
+db.create_index("users", "address._id")
+db.create_index("users", "address.city")
+```
+
+---
+
+## Concurrency Model (WAL)
+
+- SQLer uses **thread-local connections** and enables **WAL**:
+
+  - `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`
+  - Many readers in parallel; one writer (SQLite rule)
+
+- **Safe models** perform optimistic writes:
+
+  ```sql
+  UPDATE ... SET data=json(?), _version=_version+1
+  WHERE _id=? AND _version=?;
+  ```
+
+  If no rows match, a `StaleVersionError` is raised.
+
+- Under bursts, SQLite may report “database is locked”. SQLer uses `BEGIN IMMEDIATE` and a small backoff to reduce thrash.
+- `refresh()` always re-hydrates `_version`.
+
+**HTTP mapping (FastAPI)**
+
+```python
+from fastapi import HTTPException
+from sqler.models import StaleVersionError
+
+try:
+    obj.save()
+except StaleVersionError:
+    raise HTTPException(409, "Version conflict")
+```
+
+---
+
+## Performance Tips
+
+- Index hot JSON paths (e.g., `users.age`, `orders.items.sku`)
+- Batch writes with `bulk_upsert`
+- For heavy write loads, serialize writes via one process / queue
+- Perf suite is opt-in:
+
+  ```bash
+  pytest -q -m perf
+  pytest -q -m perf --benchmark-save=baseline
+  pytest -q -m perf --benchmark-compare=baseline
+  ```
+
+---
+
+## Errors
+
+- `StaleVersionError` — optimistic check failed (HTTP 409)
+- `InvariantViolation` — malformed row invariant (e.g., NULL JSON)
+- `NotConnectedError` — adapter closed / not connected
+- SQLite exceptions (`sqlite3.*`) bubble with context
+
+---
+
+## Examples
+
+See `examples/` for end-to-end scripts:
+
+- `sync_model_quickstart.py`
+- `sync_safe_model.py`
+- `async_model_quickstart.py`
+- `async_safe_model.py`
+- `model_arrays_any.py`
+
+Run:
+
+```bash
 uv run python examples/sync_model_quickstart.py
-uv run python examples/sync_safe_model.py
-uv run python examples/async_model_quickstart.py
-uv run python examples/async_safe_model.py
-uv run python examples/model_arrays_any.py
 ```
+
+---
+
+## Testing
+
+```bash
+# Unit
+uv run pytest -q
+
+# Perf (opt-in)
+uv run pytest -q -m perf
+```
+
+---
+
+## Contributing
+
+- Format & lint:
+
+  ```bash
+  uv run ruff format .
+  uv run ruff check .
+  ```
+
+- Tests:
+
+  ```bash
+  uv run pytest -q --cov=src --cov-report=term-missing
+  ```
+
+Issue templates and guidelines live in `CONTRIBUTING.md`. PRs welcome.
+
+---
+
+## License
+
+MIT © Contributors
