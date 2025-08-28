@@ -35,7 +35,6 @@ def test_safe_model_stale_update_raises():
     try:
         c = Customer(name="Bob", tier=1)
         c.save()
-        original_version = c._version
 
         # simulate concurrent update: bump version behind the model's back
         db.adapter.execute("UPDATE customers SET _version = _version + 1 WHERE _id = ?;", [c._id])

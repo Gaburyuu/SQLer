@@ -9,6 +9,7 @@ from sqler import registry
 from sqler.db.async_db import AsyncSQLerDB
 from sqler.models.async_queryset import AsyncSQLerQuerySet
 from sqler.query import SQLerExpression
+from sqler.query.async_query import AsyncSQLerQuery
 
 TAModel = TypeVar("TAModel", bound="AsyncSQLerModel")
 

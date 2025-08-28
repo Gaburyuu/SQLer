@@ -18,6 +18,17 @@ uv run python examples/01_quickstart_sync.py
 - File: `examples/03_relationships.py`
 - Save refs (child first), filter via `SQLerModelField` and `User.ref(...).field(...)`, hydration toggle with `.resolve(False)`.
 
+### Scoped any().where(...)
+
+Filter within a specific element of an array-of-objects by scoping a mid-chain predicate:
+
+```python
+from sqler.query import SQLerField as F
+
+# Match rows where any read has note == 'good' and, for that read, any mass.val > 10
+expr = F(["reads"]).any().where(F(["note"]) == "good")["masses"].any()["val"] > 10
+```
+
 ## 04 — Safe Models (optimistic locking)
 - File: `examples/04_safe_models.py`
 - Demonstrates `_version` bump and `StaleVersionError`.

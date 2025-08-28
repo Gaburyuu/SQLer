@@ -37,6 +37,10 @@ ignore = [
   "E501",  # long lines allowed in docstrings/examples
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["N", "E501"]
+"examples/**/*" = ["N", "E501"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
