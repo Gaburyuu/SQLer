@@ -5,21 +5,26 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from sqler.models import StaleVersionError
 from sqler.query import SQLerField as F
 
-from .db import init_db, close_db, get_db
+from .db import close_db, init_db
+from .errors import install_exception_handlers
 from .models import Address, Order, User
 from .schemas import (
-    AddressCreate, AddressOut,
-    UserCreate, UserPatch, UserOut,
-    OrderCreate, OrderOut, OkOut,
+    AddressCreate,
+    AddressOut,
+    OkOut,
+    OrderCreate,
+    OrderOut,
+    UserCreate,
+    UserOut,
+    UserPatch,
 )
-from .errors import install_exception_handlers
 
 
 @asynccontextmanager

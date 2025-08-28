@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import ClassVar, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Optional, Type, TypeVar
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -9,9 +9,8 @@ from sqler.db.sqler_db import SQLerDB
 from sqler.models.queryset import SQLerQuerySet
 from sqler.query import SQLerExpression
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import BrokenRef, ReferentialIntegrityError  # for type checking
+    from . import BrokenRef  # for type checking
 
 TModel = TypeVar("TModel", bound="SQLerModel")
 

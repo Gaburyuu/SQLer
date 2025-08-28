@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Optional, Type, TypeVar
-
-from pydantic import PrivateAttr
 import asyncio
 import random
 import sqlite3
+from typing import Optional, Type, TypeVar
+
+from pydantic import PrivateAttr
+
+from sqler.query.async_query import AsyncSQLerQuery
 
 from .async_model import AsyncSQLerModel
-from sqler.query.async_query import AsyncSQLerQuery
 from .async_queryset import AsyncSQLerQuerySet
 
 TASafe = TypeVar("TASafe", bound="AsyncSQLerSafeModel")

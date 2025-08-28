@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Type, TypeVar
-import time
-import sqlite3
 import random
+import sqlite3
+import time
+from typing import Optional, Type, TypeVar
 
 from pydantic import PrivateAttr
 
